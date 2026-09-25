@@ -37,6 +37,8 @@ targets:
         type: folder
     dependencies:
       - package: ZarpCore
+      - target: ZarpFilter
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.zarp.mac
@@ -45,8 +47,15 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         ENABLE_HARDENED_RUNTIME: true
-        # No sandbox / no system extension / no Network Extension entitlement yet — this target is
-        # a plain app until the real-Mac PoC exists (see the file header comment above).
+        # Ad-hoc, not the free Personal Team: Network Extensions/System Extension aren't available
+        # to a Personal Team at all (confirmed directly by Apple's provisioning server — see
+        # docs/MACOS_NETWORK_RESEARCH.md). Xcode's own signing phase won't ad-hoc-sign a target
+        # with capability-requiring entitlements even with CODE_SIGN_IDENTITY=-, so signing is
+        # done manually after the build (see tools/poc-run.sh) instead of through xcodebuild.
+        # Only works with SIP off + `systemextensionsctl developer on`, for local PoC testing —
+        # not how this app will ultimately ship.
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGN_ENTITLEMENTS: App/Zarp.entitlements
     info:
       path: Generated/Zarp-Info.plist
       properties:
@@ -56,6 +65,32 @@ targets:
         # tray presence. Flip to true only if Zarp should become menu-bar-only.
         LSUIElement: false
         NSHumanReadableCopyright: "Zarp is an independent project, not affiliated with or endorsed by Cloudflare."
+
+  ZarpFilter:
+    type: system-extension
+    platform: macOS
+    sources:
+      - path: PoC/Filter
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.zarp.mac.filter
+        PRODUCT_NAME: ZarpFilter
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        ENABLE_HARDENED_RUNTIME: true
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGN_ENTITLEMENTS: PoC/Filter/ZarpFilter.entitlements
+        SKIP_INSTALL: YES
+    info:
+      path: Generated/ZarpFilter-Info.plist
+      properties:
+        CFBundleDisplayName: Zarp Filter
+        NSSystemExtensionUsageDescription: "Zarp uses this system extension to observe, and later briefly delay, the first packet of a new Cloudflare WARP connection so DPI-evading strategies can be tested. It does not read or forward unrelated network traffic."
+        NetworkExtension:
+          NEMachServiceName: "$(TeamIdentifierPrefix)io.github.zarp.mac.filter"
+          NEProviderClasses:
+            com.apple.networkextension.filter-packet: $(PRODUCT_MODULE_NAME).FilterPacketProvider
 
   ZarpCoreTests:
     type: bundle.unit-test
