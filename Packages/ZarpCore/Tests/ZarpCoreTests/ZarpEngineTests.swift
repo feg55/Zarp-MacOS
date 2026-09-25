@@ -15,9 +15,14 @@ private struct FakeHandle: WarpConnectionHandle {
 private actor OneShotGate {
     private var opened = false
     private var continuation: CheckedContinuation<Void, Never>?
+    private var arrived = false
+    private var arrivedContinuation: CheckedContinuation<Void, Never>?
 
     func wait() async {
         if opened { return }
+        arrived = true
+        arrivedContinuation?.resume()
+        arrivedContinuation = nil
         await withCheckedContinuation { continuation = $0 }
     }
 
@@ -25,6 +30,14 @@ private actor OneShotGate {
         opened = true
         continuation?.resume()
         continuation = nil
+    }
+
+    /// Suspends until some call to `wait()` has actually parked on the gate. Lets a test know the
+    /// background task reached this exact point deterministically, instead of racing it — spawning
+    /// the task only guarantees it was scheduled, not that it has run yet.
+    func waitUntilArrived() async {
+        if arrived { return }
+        await withCheckedContinuation { arrivedContinuation = $0 }
     }
 }
 
@@ -110,7 +123,8 @@ final class ZarpEngineTests: XCTestCase {
         let engine = makeEngine(connections: provider)
         await engine.load()
 
-        XCTAssertTrue(engine.search(full: false))
+        let started = await engine.search(full: false)
+        XCTAssertTrue(started)
         await engine.waitUntilIdle()
 
         let state = await engine.state
@@ -134,7 +148,8 @@ final class ZarpEngineTests: XCTestCase {
         let engine = makeEngine(connections: provider, settings: settings)
         await engine.load()
 
-        XCTAssertTrue(engine.connect())
+        let started = await engine.connect()
+        XCTAssertTrue(started)
         await engine.waitUntilIdle()
 
         let state = await engine.state
@@ -151,8 +166,8 @@ final class ZarpEngineTests: XCTestCase {
         let engine = makeEngine(connections: provider)
         await engine.load()
 
-        let first = engine.search(full: false)
-        let second = engine.search(full: true)
+        let first = await engine.search(full: false)
+        let second = await engine.search(full: true)
         XCTAssertTrue(first)
         XCTAssertFalse(second, "a second operation must not start while the engine is busy")
 
@@ -170,11 +185,15 @@ final class ZarpEngineTests: XCTestCase {
         let engine = makeEngine(connections: provider)
         await engine.load()
 
-        XCTAssertTrue(engine.search(full: true)) // full scan so it would otherwise walk the whole catalog
+        let started = await engine.search(full: true) // full scan so it would otherwise walk the whole catalog
+        XCTAssertTrue(started)
         // Order matters: request cancellation *while the background task is still parked on the
         // gate*, before releasing it. That guarantees `stopRequested` is already true by the time
         // the in-flight attempt finishes and the loop checks it again — no race with the
         // background task racing ahead to a second strategy between "release" and "cancel".
+        // `search` only guarantees the background Task was scheduled, not that it has actually run
+        // yet, so wait for it to really reach the gate before cancelling.
+        await gate.waitUntilArrived()
         await engine.cancel()
         await gate.open()
         await engine.waitUntilIdle()

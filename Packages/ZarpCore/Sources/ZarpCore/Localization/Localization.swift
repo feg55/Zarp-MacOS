@@ -100,7 +100,8 @@ public final class Localization: @unchecked Sendable {
     /// All keys defined for a language (used by the key-parity test).
     public func keys(for code: String) -> Set<String> {
         lock.lock(); defer { lock.unlock() }
-        return Set(tables[code]?.keys ?? [])
+        guard let table = tables[code] else { return [] }
+        return Set(table.keys)
     }
 
     /// Raw value without the English fallback (used by the key-parity test).

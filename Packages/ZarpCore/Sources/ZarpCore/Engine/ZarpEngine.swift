@@ -99,10 +99,10 @@ public actor ZarpEngine {
     public func connect() -> Bool {
         run { [self] in
             guard await prepare() else { return }
-            if let s = selected {
+            if let s = await selected {
                 if await apply(s) { return }
                 await markFailed(s)
-                let others = confirmedStrategies(except: s)
+                let others = await confirmedStrategies(except: s)
                 if !others.isEmpty {
                     log.write(loc.string("log.savedFailed", [s.name(using: loc)]))
                     if await applyFirstWorking(others) { return }
@@ -120,7 +120,7 @@ public actor ZarpEngine {
     public func search(full: Bool) -> Bool {
         run { [self] in
             guard await prepare() else { return }
-            let list = strategies
+            let list = await strategies
             if full {
                 await searchAndApply(list, stopAfter: 0, title: loc.string("log.searchFull", [String(list.count)]))
             } else {
@@ -151,9 +151,9 @@ public actor ZarpEngine {
     @discardableResult
     public func disconnect() -> Bool {
         run { [self] in
-            setState(.disconnecting, Msg("detail.disconnecting"))
+            await setState(.disconnecting, Msg("detail.disconnecting"))
             await stopAll()
-            setState(.idle, Msg("detail.disconnected"))
+            await setState(.idle, Msg("detail.disconnected"))
         }
     }
 
