@@ -1,0 +1,80 @@
+# XcodeGen spec for the Zarp macOS app. Generate the Xcode project with:
+#   xcodegen generate
+# then open Zarp.xcodeproj.
+#
+# UNVERIFIED: written without Xcode or a macOS machine available (see
+# docs/IMPLEMENTATION_PLAN.md) — `xcodegen generate` has never been run against this file. It
+# covers only the plain app target described in docs/ARCHITECTURE.md §2–§5 (UI + ZarpCore).
+# It deliberately does NOT define a system extension, a LaunchDaemon helper target, entitlements,
+# or a Network Extension capability — see docs/MACOS_NETWORK_RESEARCH.md and
+# docs/IMPLEMENTATION_PLAN.md phase 1 for why those wait for the real-Mac proof of concept.
+#
+# Particularly likely to need a fix once this is actually generated:
+#  - Whether `resources:` with `type: folder` is really the right way to get a folder reference
+#    (as opposed to a flattened group) for Resources/Lang, so that
+#    `Bundle.main.resourceURL?.appendingPathComponent("Lang")` in ZarpApp.swift finds it. See that
+#    file's doc comment for the fallback path this relies on until it's confirmed.
+name: Zarp
+options:
+  bundleIdPrefix: io.github.zarp
+  deploymentTarget:
+    macOS: "14.0"
+
+packages:
+  ZarpCore:
+    path: Packages/ZarpCore
+
+targets:
+  Zarp:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/Sources/Zarp
+    resources:
+      - path: Resources/Lang
+        type: folder
+      - path: Resources/blobs
+        type: folder
+    dependencies:
+      - package: ZarpCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.zarp.mac
+        PRODUCT_NAME: Zarp
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        ENABLE_HARDENED_RUNTIME: true
+        # No sandbox / no system extension / no Network Extension entitlement yet — this target is
+        # a plain app until the real-Mac PoC exists (see the file header comment above).
+    info:
+      path: Generated/Zarp-Info.plist
+      properties:
+        CFBundleDisplayName: Zarp
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        # Shows in the Dock *and* the menu bar (MenuBarExtra), matching Windows Zarp's taskbar +
+        # tray presence. Flip to true only if Zarp should become menu-bar-only.
+        LSUIElement: false
+        NSHumanReadableCopyright: "Zarp is an independent project, not affiliated with or endorsed by Cloudflare."
+
+  ZarpCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Packages/ZarpCore/Tests/ZarpCoreTests
+    dependencies:
+      - package: ZarpCore
+    # Also runnable without Xcode: `cd Packages/ZarpCore && swift test` (see docs/IMPLEMENTATION_PLAN.md).
+
+schemes:
+  Zarp:
+    build:
+      targets:
+        Zarp: all
+        ZarpCoreTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ZarpCoreTests
