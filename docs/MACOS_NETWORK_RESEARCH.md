@@ -180,6 +180,18 @@ both and logs the result.
   value, which is for development/App Store; check Apple DTS's "Exporting a Developer ID Network Extension" post before release.
 - Helper daemon: `SMAppService.daemon`, macOS 13+. Notarization is needed for a normal install.
 - For local development only: `systemextensionsctl developer on` (needs SIP off) lets the extension load outside `/Applications`.
+- **VERIFIED 2026-09-25**: a free "Personal Team" (Xcode account with no paid Apple Developer Program
+  membership) cannot get either capability, under any configuration — confirmed directly by Apple's
+  provisioning server, not just documentation, when actually trying to build `PoC/Filter`'s minimal
+  `ZarpFilter` target with entitlements set correctly:
+  `Cannot create a Mac App Development provisioning profile for "io.github.zarp.mac.filter". Personal
+  development teams, including "feg55", do not support the Network Extensions capability.`
+  (and similarly for the app target's `system-extension.install`). Matches Apple's "Supported
+  capabilities (macOS)" reference table and multiple Apple DTS forum answers. Xcode's own signing
+  phase also refuses to ad-hoc-sign (`CODE_SIGN_IDENTITY=-`) a target with these entitlements at all —
+  `PoC/Filter` therefore builds with `CODE_SIGNING_ALLOWED=NO` and gets signed manually afterward, the
+  `systemextensionsctl developer on` route. A paid Apple Developer Program membership is the only way
+  to get a real provisioning profile for this capability.
 
 ## 8. Fallback architecture (if Q1/Q3/Q5 fail)
 
