@@ -52,7 +52,7 @@ final class LocalizationTests: XCTestCase {
 
     func testSetLanguageFiresOnChangedOnlyOnActualChange() {
         let loc = Localization(tables: ["en": [:], "ru": [:]], currentCode: "en")
-        var fired = 0
+        nonisolated(unsafe) var fired = 0
         loc.onChanged = { fired += 1 }
         loc.setLanguage("en") // already current
         XCTAssertEqual(fired, 0)

@@ -35,7 +35,11 @@ final class TestResultTests: XCTestCase {
     }
 
     func testCodableRoundTrip() throws {
-        let r = TestResult(strategyId: "s", ok: true, connectMs: 500, pingMs: 40, confirmed: true, endpoint: "isolated-3")
+        // `.iso8601` (the strategy `SettingsStore` actually persists with) has whole-second
+        // precision, so the fixture timestamp must already be second-aligned for the round trip
+        // to be exactly equal — this is testing the wire format, not `Date` itself.
+        let timestamp = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
+        let r = TestResult(strategyId: "s", ok: true, connectMs: 500, pingMs: 40, confirmed: true, endpoint: "isolated-3", timestamp: timestamp)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let decoder = JSONDecoder()
