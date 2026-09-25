@@ -93,6 +93,15 @@ struct SettingsView: View {
                     Text("Zarp \(appVersion)")
                         .font(Theme.font(11))
                         .foregroundColor(Theme.textDim)
+
+                    #if DEBUG
+                    // PoC only (docs/MACOS_NETWORK_RESEARCH.md Q1) — not for release builds.
+                    actionButton("PoC: Activate Filter Extension") {
+                        SystemExtensionActivator.shared.activate(identifier: "io.github.zarp.mac.filter") { event in
+                            vm.log.write("[PoC] \(event)")
+                        }
+                    }
+                    #endif
                 }
                 .frame(maxWidth: 280, alignment: .leading)
 
