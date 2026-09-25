@@ -64,6 +64,9 @@ targets:
       - path: Packages/ZarpCore/Tests/ZarpCoreTests
     dependencies:
       - package: ZarpCore
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     # Also runnable without Xcode: `cd Packages/ZarpCore && swift test` (see docs/IMPLEMENTATION_PLAN.md).
 
 schemes:

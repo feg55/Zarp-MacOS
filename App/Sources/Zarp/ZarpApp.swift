@@ -12,9 +12,12 @@ import ZarpCore
 /// `Bundle.main.resourceURL?.appendingPathComponent("Lang")` to resolve; `project.yml` at the repo
 /// root sets this up, but XcodeGen has not been run against it on a real Mac yet).
 ///
-/// Also unverified: intercepting the titlebar red-button close specifically (as opposed to the
-/// menu bar Quit item and ⌘Q below, which do go through `AppViewModel.requestClose`) — see
-/// `CloseConfirmationView.swift`'s doc comment for what that still needs.
+/// The titlebar red-button close, the menu bar Quit item, and ⌘Q all funnel into the same
+/// `AppViewModel.requestClose` path: SwiftUI's `Window` scene has no direct hook for
+/// `windowShouldClose(_:)`, so `WindowCloseInterceptor` below attaches a plain `NSWindowDelegate`
+/// to the underlying `NSWindow` once it exists, and always answers `false` — `requestClose` decides
+/// asynchronously (it may show `CloseConfirmationView` as a sheet first) and itself calls
+/// `NSApp.hide`/`NSApp.terminate` when it has an answer, exactly as the other two paths already do.
 @main
 @MainActor
 struct ZarpApp: App {
@@ -29,6 +32,7 @@ struct ZarpApp: App {
     var body: some Scene {
         Window("Zarp", id: "main") {
             MainWindowView(vm: vm)
+                .background(WindowCloseInterceptor(onShouldClose: requestClose))
         }
         .windowResizability(.contentSize)
         .commands {
@@ -117,5 +121,42 @@ struct ZarpApp: App {
         return URL(fileURLWithPath: #filePath) // App/Sources/Zarp/ZarpApp.swift
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Resources/Lang")
+    }
+}
+
+/// Invisible helper view: on insertion, finds its enclosing `NSWindow` and makes itself that
+/// window's delegate purely to intercept `windowShouldClose(_:)`. The window has no other delegate
+/// of its own to preserve (plain SwiftUI `Window` scenes don't set one), so this doesn't need to
+/// forward other delegate methods anywhere.
+private struct WindowCloseInterceptor: NSViewRepresentable {
+    let onShouldClose: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async { context.coordinator.attach(via: view, onShouldClose: onShouldClose) }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.attach(via: nsView, onShouldClose: onShouldClose)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, NSWindowDelegate {
+        private weak var window: NSWindow?
+        private var onShouldClose: (() -> Void)?
+
+        func attach(via view: NSView, onShouldClose: @escaping () -> Void) {
+            self.onShouldClose = onShouldClose
+            guard let window = view.window, window !== self.window else { return }
+            self.window = window
+            window.delegate = self
+        }
+
+        func windowShouldClose(_ sender: NSWindow) -> Bool {
+            onShouldClose?()
+            return false
+        }
     }
 }

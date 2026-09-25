@@ -90,7 +90,7 @@ final class AppViewModel: ObservableObject {
 
     func connectButtonTapped() {
         if isBusy {
-            engine.cancel()
+            Task { await engine.cancel() }
             return
         }
         if state == .connected {
@@ -104,7 +104,7 @@ final class AppViewModel: ObservableObject {
     func fullScan() { Task { _ = await engine.search(full: true) } }
     func testSelected(_ items: [Strategy]) { Task { _ = await engine.testStrategies(items) } }
     func use(_ strategy: Strategy) { Task { _ = await engine.use(strategy) } }
-    func cancel() { engine.cancel() }
+    func cancel() { Task { await engine.cancel() } }
 
     func reloadCustomStrategies() {
         Task { await engine.reloadStrategies(); await refresh() }
@@ -164,7 +164,7 @@ final class AppViewModel: ObservableObject {
         // `disconnect()`/`cancel()` on the engine only confirm an operation *started* — they are
         // not themselves awaitable to completion, which is exactly why `waitUntilIdle()` follows
         // each one here rather than being trusted to have already happened.
-        engine.cancel()
+        await engine.cancel()
         await waitUntilIdle()
         if settings.disconnectOnExit {
             _ = await engine.disconnect()

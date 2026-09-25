@@ -32,6 +32,7 @@ struct MainWindowView: View {
                 .foregroundColor(Theme.textDim)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 24)
                 .padding(.top, 6)
                 .frame(minHeight: 34)
@@ -48,6 +49,7 @@ struct MainWindowView: View {
                 .foregroundColor(Theme.textDim)
                 .multilineTextAlignment(.center)
                 .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 24)
                 .padding(.top, 14)
 
