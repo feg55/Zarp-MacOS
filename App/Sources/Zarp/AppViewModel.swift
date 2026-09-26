@@ -34,6 +34,19 @@ final class AppViewModel: ObservableObject {
     /// extra binding through the Scene hierarchy.
     @Published var showingCloseConfirmation = false
 
+    /// Phase 8: `zarpd` installed via `SMAppService.daemon` (`ZarpdInstaller.swift`) rather than
+    /// requiring a manual `sudo zarpd` in a Terminal. `daemonState` answers "is it *installed*";
+    /// `daemonPing`/`daemonPingError` separately answer "is it actually up and responding right
+    /// now" (`ZarpdClient.ping()`) — a daemon can be registered+enabled and still not be the one
+    /// currently listening (crashed and mid-restart, a stale build before a re-approval, etc.), so
+    /// neither signal substitutes for the other.
+    let installer = ZarpdInstaller()
+    @Published private(set) var daemonState: ZarpdInstaller.State = .notInstalled
+    @Published private(set) var daemonPing: PingResult?
+    @Published private(set) var daemonPingError: String?
+    @Published private(set) var daemonActionError: String?
+    private let zarpdClient: ZarpdClient?
+
     init(
         settingsStore: SettingsStore, strategyStore: CustomStrategyStore, localization: Localization, log: LogBus,
         connections: WarpConnectionProvider = ZarpdClient(), probe: WarpProbe? = nil,
@@ -47,6 +60,7 @@ final class AppViewModel: ObservableObject {
         // caller providing a custom `connections` (a fake, in a future test) shouldn't silently
         // still get a real ZarpdClient for probing.
         let resolvedProbe = probe ?? (connections as? ZarpdClient) ?? ZarpdClient()
+        self.zarpdClient = (connections as? ZarpdClient) ?? (resolvedProbe as? ZarpdClient)
         self.engine = ZarpEngine(
             settingsStore: settingsStore,
             strategyStore: strategyStore,
@@ -77,7 +91,65 @@ final class AppViewModel: ObservableObject {
         let systemCode = Self.systemLanguageCode()
         localization.setLanguage(localization.resolve(setting: settings.language, systemCode: systemCode))
         await refresh()
+        refreshDaemonState()
+        await pingDaemon()
         isReady = true
+    }
+
+    // MARK: - zarpd daemon install/status (Phase 8)
+
+    func refreshDaemonState() {
+        installer.refresh()
+        daemonState = installer.state
+    }
+
+    func installDaemon() {
+        daemonActionError = nil
+        do {
+            try installer.install()
+            daemonState = installer.state
+        } catch {
+            daemonActionError = String(describing: error)
+        }
+    }
+
+    func uninstallDaemon() {
+        daemonActionError = nil
+        do {
+            try installer.uninstall()
+            daemonState = installer.state
+        } catch {
+            daemonActionError = String(describing: error)
+        }
+        daemonPing = nil
+    }
+
+    func openDaemonApprovalSettings() {
+        installer.openSystemSettingsLoginItems()
+    }
+
+    /// See `ZarpdClient.restart()`'s doc comment: there's no unprivileged "stop and stay stopped
+    /// but still installed" for a root daemon, so this is what "restart" means here. Re-pings
+    /// after a delay rather than trusting the restart call's own success/failure, since the
+    /// response can race the process actually exiting.
+    func restartDaemon() async {
+        guard let zarpdClient else { return }
+        daemonActionError = nil
+        _ = try? await zarpdClient.restart()
+        daemonPing = nil
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        await pingDaemon()
+    }
+
+    func pingDaemon() async {
+        guard let zarpdClient else { return }
+        do {
+            daemonPing = try await zarpdClient.ping()
+            daemonPingError = nil
+        } catch {
+            daemonPing = nil
+            daemonPingError = (error as? WarpConnectionError)?.message ?? String(describing: error)
+        }
     }
 
     /// Waits for whatever operation is in flight to finish — used when the app is quitting

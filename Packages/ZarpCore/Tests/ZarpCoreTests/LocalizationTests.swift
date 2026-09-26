@@ -92,10 +92,16 @@ final class LocalizationTests: XCTestCase {
         for language in Localization.languages where language.code != "en" {
             let missing = englishKeys.subtracting(loc.keys(for: language.code))
             if !missing.isEmpty {
-                // Known, documented gap for the 4 new en.txt-only keys until translators catch up
-                // (see the header note in Resources/Lang/en.txt) — anything beyond that is new
-                // and should be investigated.
-                let expectedGap: Set<String> = ["strategy.directH2", "strategy.badSyntax", "strategy.unknownFeature", "strategy.badsum"]
+                // Known, documented gap for the en.txt-only keys until translators catch up (see
+                // the header note in Resources/Lang/en.txt) — anything beyond that is new and
+                // should be investigated.
+                let expectedGap: Set<String> = [
+                    "strategy.directH2", "strategy.badSyntax", "strategy.unknownFeature", "strategy.badsum",
+                    "daemon.title", "daemon.notInstalled", "daemon.requiresApproval", "daemon.enabled",
+                    "daemon.notFound", "daemon.unknown", "daemon.respondingYes", "daemon.respondingNo",
+                    "daemon.respondingUnknown", "daemon.install", "daemon.restart", "daemon.uninstall",
+                    "daemon.openSettings", "daemon.refresh",
+                ]
                 XCTAssertEqual(missing, expectedGap, "\(language.code).txt is missing unexpected keys: \(missing.subtracting(expectedGap).sorted())")
             }
         }

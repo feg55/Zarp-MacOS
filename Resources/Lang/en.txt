@@ -212,3 +212,19 @@ log.autostartFailed = Could not change autostart: {0}
 log.licenseFailed = Could not write license {0}: {1}
 log.configBroken = Settings are corrupted, using defaults: {0}
 log.configSaveFailed = Could not save settings: {0}
+
+# ---- zarpd daemon install/status (Phase 8, SettingsView's daemonSection)
+daemon.title = zarpd daemon
+daemon.notInstalled = Not installed
+daemon.requiresApproval = Installed — needs approval in System Settings
+daemon.enabled = Installed
+daemon.notFound = Not found — try reinstalling Zarp
+daemon.unknown = Unknown status ({0})
+daemon.respondingYes = Responding (version {0}, pid {1})
+daemon.respondingNo = Not responding: {0}
+daemon.respondingUnknown = Checking...
+daemon.install = Install
+daemon.restart = Restart
+daemon.uninstall = Uninstall
+daemon.openSettings = Open System Settings…
+daemon.refresh = Refresh
