@@ -5,11 +5,12 @@ import ZarpCore
 /// Bridges the `ZarpEngine` actor (plus `Localization` and `LogBus`) to SwiftUI state, and owns
 /// the concrete wiring the App target is responsible for.
 ///
-/// TODO(real-Mac PoC): `connections`/`probe`/`network` below are always the `Unimplemented*`
-/// placeholders from `ZarpCore`'s `EngineProtocols.swift`. Every Connect/Scan action in this UI
-/// will visibly fail with the raw `WarpConnectionError` message until those are replaced with a
-/// real implementation — see `docs/IMPLEMENTATION_PLAN.md`. This view model does not paper over
-/// that, and must not grow a fake implementation to make the UI "look done" in the meantime.
+/// `connections`/`probe` default to `ZarpdClient` (docs/ARCHITECTURE.md §9.4, `zarpd/ipc`) — real
+/// IPC to the `zarpd` daemon, which must already be running (`sudo zarpd`; `SMAppService`
+/// installation is `docs/IMPLEMENTATION_PLAN.md` phase 8, not built yet) for Connect/Scan to work.
+/// `network` is still `UnimplementedNetworkInspector` — that piece is real, separate, smaller work
+/// (`getifaddrs`), not blocking Connect/Scan, so it isn't done yet either; this view model does
+/// not paper over that with a fake implementation to make the UI "look done" in the meantime.
 @MainActor
 final class AppViewModel: ObservableObject {
     let engine: ZarpEngine
@@ -33,15 +34,25 @@ final class AppViewModel: ObservableObject {
     /// extra binding through the Scene hierarchy.
     @Published var showingCloseConfirmation = false
 
-    init(settingsStore: SettingsStore, strategyStore: CustomStrategyStore, localization: Localization, log: LogBus) {
+    init(
+        settingsStore: SettingsStore, strategyStore: CustomStrategyStore, localization: Localization, log: LogBus,
+        connections: WarpConnectionProvider = ZarpdClient(), probe: WarpProbe? = nil,
+        network: NetworkInspector = UnimplementedNetworkInspector()
+    ) {
         self.localization = localization
         self.log = log
+        // WarpProbe defaults to the same ZarpdClient instance as WarpConnectionProvider when the
+        // caller doesn't pass its own (the common case) — one socket-speaking object, not two —
+        // but can't share that default with the `connections` parameter above directly since a
+        // caller providing a custom `connections` (a fake, in a future test) shouldn't silently
+        // still get a real ZarpdClient for probing.
+        let resolvedProbe = probe ?? (connections as? ZarpdClient) ?? ZarpdClient()
         self.engine = ZarpEngine(
             settingsStore: settingsStore,
             strategyStore: strategyStore,
-            connections: UnimplementedWarpConnectionProvider(),
-            probe: UnimplementedWarpProbe(),
-            network: UnimplementedNetworkInspector(),
+            connections: connections,
+            probe: resolvedProbe,
+            network: network,
             log: log,
             localization: localization
         )
