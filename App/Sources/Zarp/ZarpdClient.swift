@@ -17,7 +17,7 @@ import ZarpCore
 final class ZarpdClient: WarpConnectionProvider, WarpProbe, @unchecked Sendable {
     private let socketPath: String
 
-    init(socketPath: String = "/tmp/zarpd.sock") {
+    init(socketPath: String = "/var/run/zarpd.sock") {
         self.socketPath = socketPath
     }
 
@@ -43,6 +43,26 @@ final class ZarpdClient: WarpConnectionProvider, WarpProbe, @unchecked Sendable 
         // a resource leak worth logging once this has a real log sink wired in, but not something
         // the caller (already tearing down) can usefully retry.
         _ = try? await call("close", CloseParams(connectionId: connectionID)) as EmptyResult
+    }
+
+    /// Cheap, side-effect-free liveness/version check (Phase 8: "app detects daemon availability/
+    /// version" — distinct from `ZarpdInstaller.state`, which only answers "is it installed,"
+    /// not "is it actually up and answering right now"). Throws the same `WarpConnectionError`
+    /// as any other call — most commonly "connect(...): No such file or directory" when `zarpd`
+    /// isn't running at all.
+    func ping() async throws -> PingResult {
+        try await call("ping", EmptyParams())
+    }
+
+    /// Asks zarpd to exit non-zero, which the installed LaunchDaemon's `KeepAlive: {SuccessfulExit:
+    /// false}` then relaunches — see zarpd/cmd/zarpd/main.go's handleRestart doc comment for why
+    /// this, not a real "stop," is what "restart" means for a root daemon an unprivileged app has
+    /// no `sudo` access to. The response race is real but harmless: zarpd answers before exiting,
+    /// but the socket connection itself may drop mid-read if the process dies unusually fast, so a
+    /// `WarpConnectionError` here isn't necessarily a failed restart — callers should re-`ping()`
+    /// after a short delay rather than trust this call's success/failure alone.
+    func restart() async throws -> RestartResult {
+        try await call("restart", EmptyParams())
     }
 
     // MARK: - WarpProbe
@@ -187,6 +207,19 @@ private struct ErrorInfo: Decodable {
 }
 
 private struct EmptyResult: Decodable {}
+private struct EmptyParams: Encodable {}
+
+/// Mirrors zarpd/ipc/protocol.go's PingResult. Not `private` — `ping()`'s callers (Settings UI)
+/// need it.
+struct PingResult: Decodable {
+    let version: String
+    let pid: Int
+}
+
+/// Mirrors zarpd/ipc/protocol.go's RestartResult. Not `private` for the same reason as `PingResult`.
+struct RestartResult: Decodable {
+    let acknowledged: Bool
+}
 
 private struct OpenParams: Encodable {
     let transport: String

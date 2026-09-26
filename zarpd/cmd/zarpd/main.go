@@ -77,9 +77,9 @@ type liveConn struct {
 }
 
 func main() {
-	socketPath := flag.String("socket", "/tmp/zarpd.sock", "Unix domain socket to listen on")
+	socketPath := flag.String("socket", "/var/run/zarpd.sock", "Unix domain socket to listen on")
 	blobsDir := flag.String("blobs", defaultBlobsDir(), "directory holding the fake-packet blobs (Resources/blobs)")
-	configPath := flag.String("config", "/tmp/zarp-warp-config.json", "WARP account config path")
+	configPath := flag.String("config", "/Library/Application Support/Zarp/zarp-warp-config.json", "WARP account config path")
 	measureHost := flag.String("measure-host", "1.1.1.1", "IP used for the cdn-cgi/trace measurement and its narrow per-connection route")
 	mtu := flag.Int("mtu", 1280, "tunnel MTU")
 	flag.Parse()
@@ -115,18 +115,53 @@ func main() {
 	}
 }
 
+// defaultBlobsDir looks for a "Resources/blobs" subdirectory under each of the executable's
+// ancestor directories in turn (closest first) and uses the first one that actually exists —
+// covers both the installed-bundle layout (Zarp.app/Contents/{MacOS,Resources}/, one level up
+// from the executable) and the repo-relative dev layout (running as /tmp/zarpd or similar next to
+// a checkout, three levels up) without assuming which one applies. Nothing matching just means
+// -blobs must be passed explicitly.
 func defaultBlobsDir() string {
-	// Repo-relative default for development; a real install would pass -blobs explicitly at a
-	// fixed path (see docs/IMPLEMENTATION_PLAN.md phase 8, not yet written).
 	exe, err := os.Executable()
 	if err != nil {
 		return "Resources/blobs"
 	}
+	if abs, err := filepath.Abs(exe); err == nil {
+		exe = abs
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	dir := filepath.Dir(exe)
+	for i := 0; i < 6; i++ {
+		if candidate := filepath.Join(dir, "Resources", "blobs"); dirExists(candidate) {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
 	return filepath.Join(filepath.Dir(exe), "..", "..", "..", "Resources", "blobs")
 }
 
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// daemonVersion matches App/project.yml's MARKETING_VERSION — the app compares this against its
+// own bundled zarpd's version (Phase 8: daemon-availability/version detection) to tell "zarpd
+// isn't running" apart from "zarpd is running but stale, from a previous install."
+const daemonVersion = "0.1.0"
+
 func (s *server) handle(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	switch method {
+	case "ping":
+		return ipc.PingResult{Version: daemonVersion, Pid: os.Getpid()}, nil
+	case "restart":
+		return s.handleRestart()
 	case "open":
 		return s.handleOpen(ctx, params)
 	case "close":
@@ -147,6 +182,25 @@ func (s *server) loadBlob(name string) ([]byte, error) {
 		return nil, fmt.Errorf("unknown blob %q", name)
 	}
 	return os.ReadFile(filepath.Join(s.blobsDir, file))
+}
+
+// handleRestart is Phase 8's answer to "restart" for a root LaunchDaemon that the unprivileged app
+// cannot itself start or stop (launchd's own security boundary — no `sudo`/root needed from the
+// app's side is the whole point): closes every live connection cleanly, acknowledges the request,
+// then — from a separate goroutine, after a short delay so the acknowledgement actually reaches
+// the caller before the process disappears — exits with a non-zero status. The LaunchDaemon plist
+// has `KeepAlive: {SuccessfulExit: false}`, which restarts on exactly that (an *unsuccessful*
+// exit) but deliberately not on a clean `os.Exit(0)`/SIGTERM shutdown, so this is what tells
+// launchd "bring it back," as distinct from "stop." Real "stop" only exists via `unregister()`
+// (App/Sources/Zarp/ZarpdInstaller.swift) — no in-between, unprivileged, "paused but still
+// installed" state exists without root.
+func (s *server) handleRestart() (any, error) {
+	s.closeAll()
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		os.Exit(1)
+	}()
+	return ipc.RestartResult{Acknowledged: true}, nil
 }
 
 func (s *server) handleOpen(ctx context.Context, raw json.RawMessage) (any, error) {

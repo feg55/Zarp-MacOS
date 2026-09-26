@@ -31,6 +31,23 @@ type ErrorInfo struct {
 	TimedOut bool `json:"timedOut"`
 }
 
+// --- ping ---
+
+// PingResult answers "is zarpd alive and what build is it" — no params, no side effects, cheap
+// enough for the app to poll while showing daemon-availability status in Settings (Phase 8).
+type PingResult struct {
+	Version string `json:"version"`
+	Pid     int    `json:"pid"`
+}
+
+// --- restart ---
+
+// RestartResult acknowledges the request before zarpd actually exits — see the handler's own
+// comment on why the response has to be flushed first.
+type RestartResult struct {
+	Acknowledged bool `json:"acknowledged"`
+}
+
 // --- open ---
 
 // OpenParams mirrors WarpConnectionProvider.open(strategy:endpoint:timeoutMs:persistent:) —

@@ -21,12 +21,92 @@ struct SettingsView: View {
 
                 Divider().overlay(Theme.border)
 
+                daemonSection
+
+                Divider().overlay(Theme.border)
+
                 optionsSection
             }
             .padding(.bottom, 20)
         }
         .background(Theme.back)
         .frame(minWidth: 760, minHeight: 700)
+        .onAppear { vm.refreshDaemonState() }
+    }
+
+    // MARK: - zarpd daemon (Phase 8)
+
+    private var daemonSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(vm.localization.string("daemon.title"))
+                .font(Theme.font(15, weight: .bold))
+                .foregroundColor(Theme.text)
+
+            HStack(spacing: 10) {
+                Circle().fill(daemonStatusColor).frame(width: 9, height: 9)
+                Text(daemonStatusText)
+                    .font(Theme.font(12.5))
+                    .foregroundColor(Theme.text)
+                Spacer()
+                daemonActionButtons
+            }
+
+            Text(daemonPingText)
+                .font(Theme.font(11.5))
+                .foregroundColor(Theme.textDim)
+
+            if let err = vm.daemonActionError {
+                Text(err)
+                    .font(Theme.font(11))
+                    .foregroundColor(Theme.bad)
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    @ViewBuilder
+    private var daemonActionButtons: some View {
+        switch vm.daemonState {
+        case .notInstalled, .notFound, .unknown:
+            actionButton(vm.localization.string("daemon.install")) { vm.installDaemon() }
+        case .requiresApproval:
+            actionButton(vm.localization.string("daemon.openSettings")) { vm.openDaemonApprovalSettings() }
+        case .enabled:
+            actionButton(vm.localization.string("daemon.restart")) { Task { await vm.restartDaemon() } }
+            actionButton(vm.localization.string("daemon.uninstall")) { vm.uninstallDaemon() }
+        }
+        actionButton(vm.localization.string("daemon.refresh")) {
+            vm.refreshDaemonState()
+            Task { await vm.pingDaemon() }
+        }
+    }
+
+    private var daemonStatusColor: Color {
+        switch vm.daemonState {
+        case .enabled: return (vm.daemonPing != nil) ? Theme.accent : Theme.busy
+        case .requiresApproval: return Theme.busy
+        case .notInstalled, .notFound, .unknown: return Theme.bad
+        }
+    }
+
+    private var daemonStatusText: String {
+        switch vm.daemonState {
+        case .notInstalled: return vm.localization.string("daemon.notInstalled")
+        case .requiresApproval: return vm.localization.string("daemon.requiresApproval")
+        case .enabled: return vm.localization.string("daemon.enabled")
+        case .notFound: return vm.localization.string("daemon.notFound")
+        case .unknown(let raw): return vm.localization.string("daemon.unknown", [raw])
+        }
+    }
+
+    private var daemonPingText: String {
+        if let ping = vm.daemonPing {
+            return vm.localization.string("daemon.respondingYes", [ping.version, String(ping.pid)])
+        }
+        if let err = vm.daemonPingError {
+            return vm.localization.string("daemon.respondingNo", [err])
+        }
+        return vm.localization.string("daemon.respondingUnknown")
     }
 
     private var optionsSection: some View {
