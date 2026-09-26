@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
@@ -71,6 +72,34 @@ func (p *Physical) BindUDP(conn *net.UDPConn) error {
 	v6 := conn.LocalAddr().(*net.UDPAddr).IP.To4() == nil
 	var serr error
 	cerr := raw.Control(func(fd uintptr) {
+		if v6 {
+			serr = unix.SetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_BOUND_IF, p.Index)
+		} else {
+			serr = unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_BOUND_IF, p.Index)
+		}
+	})
+	if cerr != nil {
+		return cerr
+	}
+	return serr
+}
+
+// Control has net.Dialer's Control signature — pass it as a Dialer's Control field to bind
+// whatever socket the dialer creates to Physical's interface before it connects, the TCP
+// equivalent of BindUDP. address is the resolved "ip:port" net.Dialer.Control hands it, which is
+// enough to tell v4 apart from v6 without needing a separate flag from the caller.
+func (p *Physical) Control(_, address string, c syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("route.Control: %s: %w", address, err)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf("route.Control: %q is not an IP", host)
+	}
+	v6 := ip.To4() == nil
+	var serr error
+	cerr := c.Control(func(fd uintptr) {
 		if v6 {
 			serr = unix.SetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_BOUND_IF, p.Index)
 		} else {
