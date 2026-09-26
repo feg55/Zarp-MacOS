@@ -25,31 +25,38 @@ Verified on a real Mac, not assumed:
 This phase's outcome doesn't change with the architecture pivot — `ZarpCore` and the UI are
 unaffected (see `ARCHITECTURE.md` §2–§6). What changes is everything after it.
 
-## Phase 2 — CLI prototype: open a real utun, move packets, close cleanly
+## Phase 2 — CLI prototype: open a real utun, move packets, close cleanly — DONE (2026-09-26)
 
 No GUI, no WARP, no MASQUE yet. The single question: can a small Go program, run as root, create
 a real macOS utun device, read and write packets on it, and close it cleanly, without needing
-Apple entitlements, System Extensions, or SIP changes?
+Apple entitlements, System Extensions, or SIP changes? **Yes, confirmed on this Mac.**
 
-Deliverables:
-- A new Go module (`zarpd/`, `go.mod` targeting `darwin/arm64`) depending directly on
-  `golang.zx2c4.com/wireguard` (for `tun.CreateTUN`, the same package Android's `zarpcore` already
-  depends on, just its real-device constructor instead of `netstack.CreateNetTUN` — see
-  `ARCHITECTURE.md` §9.1).
-- `zarpd/cmd/tunpoc`: opens a utun, assigns it a private IPv4 address (e.g. `10.66.0.1/24`) and
-  MTU, logs every packet it reads (size, IP version, protocol) for a few seconds, then closes the
-  device and exits — verifying the OS state is actually clean afterward (`ifconfig` no longer
-  lists it, no leftover route).
-- Confirm what privilege level this actually needs (utun creation is traditionally root-only on
-  BSD-family kernels, but confirm on this exact macOS version rather than assume) and whether
-  `sudo` is sufficient for this CLI-only step, deferring the real `SMAppService.daemon`
-  installation question to phase 8.
+Delivered: `zarpd/` (Go module, `golang.zx2c4.com/wireguard`'s `tun.CreateTUN` — the same package
+Android's `zarpcore` depends on, its real-device constructor rather than `netstack.CreateNetTUN`,
+see `ARCHITECTURE.md` §9.1) and `zarpd/cmd/tunpoc`, which opens a utun, assigns it a
+point-to-point IPv4 address via `ifconfig`, reads packets for a fixed duration logging each one,
+answers ICMP echo requests from its peer address (a real write, not just a read — see below for
+why that matters), and closes the device.
 
-Exit criteria: utun visible in `ifconfig` while the tool runs, `ping 10.66.0.1` (or sending a
-crafted packet into the device with e.g. `nc`/a second small Go program) actually produces a
-packet the tool reads, and the interface is gone afterward with no manual cleanup needed.
+Confirmed:
+- **Needs root.** Running unprivileged fails with `CreateTUN: operation not permitted`; `sudo`
+  is sufficient (no entitlement, no System Extension, no SIP change) — exactly what this
+  architecture exists to achieve. The real `SMAppService.daemon` install question is still phase 8.
+- **A real bug, found by actually running it**, not by reading the wireguard-go source carefully
+  enough first: Darwin's `NativeTun.Read`/`Write` both require 4 bytes of headroom before the IP
+  packet (`tun_darwin.go`'s `bufs[0][offset-4:]`) for the kernel's/our own address-family header —
+  calling `Read` with `offset=0` panics (`slice bounds out of range [-4:]`). Fixed: buffers
+  allocated with the headroom, `Read`/`Write` called with `offset=4`, the IP packet itself lives at
+  `buf[4:4+size]`.
+- **Read and write both verified with real traffic**, not just "no error returned": `ping
+  10.66.0.2` (the point-to-point peer address) from a second terminal got genuine ICMP echo
+  replies with correct round-trip times (~0.3–0.5 ms) — proof the checksums, address swap, and
+  write path are all actually correct, not just that `Write()` returned nil. After the 15 s test
+  duration elapsed and the device closed, the *same* ping session immediately started timing out
+  and `ifconfig utun9` reported the interface gone — clean teardown confirmed, not assumed.
 
-Verified by: running it, on this Mac, watching `ifconfig`/`netstat -rn` before/during/after.
+Verified by: running it on this Mac as root, with real `ping` traffic in a second terminal, output
+inspected directly (not summarized by the tool that ran it).
 
 ## Phase 3 — WARP MASQUE core on macOS arm64, no DPI tricks yet
 

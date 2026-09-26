@@ -9,3 +9,8 @@ xcuserdata/
 *.xcodeproj/
 Generated/
 .swiftpm/
+
+# zarpd (Go)
+zarpd/tunpoc
+zarpd/cmd/*/tunpoc
+zarpd/bin/
