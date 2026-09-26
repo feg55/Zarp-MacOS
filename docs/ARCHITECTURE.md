@@ -274,19 +274,27 @@ standard BSD socket option constants, unchanged on macOS.
 
 ### 9.3 Routing: avoiding a loop back into utun
 
-Not yet researched in depth — flagged here as the next thing `docs/IMPLEMENTATION_PLAN.md` phase 2
-needs a real answer to, not guessed at. The requirement (from the pivot brief, and matching
-Android's `VpnService.protect()` role): once `zarpd` replaces the default route to point at its
-utun, any socket `zarpd` itself opens for the WARP/MASQUE control connection (the UDP QUIC dial
-socket, and for HTTP/2, the TCP socket) must still go out the *physical* interface, or the WARP
-handshake packets would loop back into the tunnel that doesn't exist yet. The old, rejected design
-(§10) already identified `IP_BOUND_IF`/`IPV6_BOUND_IF` (a `setsockopt` binding a socket to a
-specific interface index) for exactly this purpose, for a different piece (the fake-packet
-injector) — the same mechanism should apply here. To confirm on a real Mac: whether `IP_BOUND_IF`
-alone is sufficient once a default route via utun exists, or whether an explicit route (WARP
-endpoint IP → physical gateway, higher priority than the replaced default) is also needed
-defensively. Also open: IPv6 handling, DNS while the tunnel is up, and cleanup after a crash
-(stale routes left behind if `zarpd` dies without running its shutdown path).
+**VERIFIED 2026-09-26** (`zarpd/route`, `docs/IMPLEMENTATION_PLAN.md` phase 3): `IP_BOUND_IF`
+(`zarpd/route.Physical.BindUDP`) does prevent the WARP control socket from looping back into the
+tunnel, confirmed with real traffic — `curl .../cdn-cgi/trace` through the resulting tunnel
+returned `warp=on`. `CurrentDefault()` gets the interface to bind to from `route -n get default`
+(shelled out to, like `ifconfig` for address config — no raw `PF_ROUTE` socket code needed).
+
+**Still open**, because phase 3 deliberately tested with one narrow host route rather than a
+default-route replacement (much lower blast radius for a first test — see
+`docs/IMPLEMENTATION_PLAN.md` phase 3): whether `IP_BOUND_IF` alone stays sufficient once the
+*default* route (not just one host route) points at the utun, or whether an explicit higher-priority
+route for the WARP endpoint IP is also needed defensively; IPv6 handling; DNS while the tunnel is
+up; and cleanup after a crash (stale routes left behind if `zarpd` dies without running its
+shutdown path). This is squarely the next thing to verify, not guessed at.
+
+**Real-world wrinkle already found:** on the Mac this was tested on, `route -n get default`
+reported another tunnel interface (a `utunN`, presumably an existing corporate VPN or similar) as
+the current default, not a hardware NIC — `CurrentDefault()` handled this correctly (it binds to
+whatever is *actually* reaching the internet right now, which is the right behavior), but it's a
+reminder that "physical interface" here means "whatever currently gets to the real internet," not
+literally always Wi-Fi/Ethernet, and that Zarp running on a Mac that's already behind another VPN
+is a real scenario to keep handling correctly, not an edge case to dismiss.
 
 ### 9.4 IPC shape (not decided)
 
