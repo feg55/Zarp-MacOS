@@ -253,6 +253,86 @@ utun + narrow route → real packet pump, and the same in reverse for a clean di
   the same pattern elsewhere (`grep` for `DragGesture`/`TapGesture`/`accessibilityAddTraits` across
   `Components/`/`Screens/`) — `PowerButton` was the only offender.
 
+## Phase 7.5 — real product-behavior validation (Quick Scan, Full Scan, auto-select, self-heal) — DONE (2026-09-26)
+
+Phase 7 proved the IPC chain works end to end with one manually preselected, already-known-good
+strategy. This phase validated the actual product workflow through the real app — Quick Scan, Full
+Scan, double-check, auto-selection, persistence, and self-healing fallback — the way a real user
+would actually drive it, on the real DPI-restricted network. It found and fixed two real bugs
+neither Phase 7 nor any CLI test had exercised, then re-verified every item on the user's own
+validation checklist against the fixed build.
+
+**Bug 1 — every scan-driven test failed instantly, including already-proven strategies.** The
+first real Quick Scan run failed on all 20 strategies in seconds — far too fast to be real DPI
+timeouts. Root cause: `ZarpEngine.test()` passes a synthetic per-attempt uniqueness token (e.g.
+`"isolated-42"`, whenever "isolate tests" is on — the default) as `endpoint`, documented in
+`ZarpEngine.nextEndpoint()`'s own comment as a placeholder never reconciled with a real backend.
+`zarpd`'s `dialH3`/`dialH2` blindly fed that string into `net.ParseIP`, got `nil` back, and dialed
+`&net.UDPAddr{IP: nil, Port: 443}` — an instant local socket error, not a network condition. Manual
+"Использовать" never hit this because `apply()` always passes `endpoint: nil`; only the scan path
+(`test()`) passes the token, so nothing before this phase had ever exercised it against the real
+`zarpd` backend. Fixed in `zarpd/cmd/zarpd/main.go`: only honor `p.Endpoint` as an override when it
+actually parses as an IP, otherwise fall back to the account's real endpoint.
+
+**Bug 2 — any Settings-screen change after a scan silently erased discovered results.** Found by
+the user directly: after a real Quick Scan produced a genuine `confirmed: true` result, the main
+window read "Рабочая стратегия не найдена" — a message that should only appear when a scan finds
+*nothing*. Root cause: `AppViewModel.settings` is captured once at launch and never refreshed from
+the engine afterward (`AppViewModel.refresh()` updates `results`/`selectedStrategyId` directly from
+the engine, but never touches `settings`); any toggle/picker on the Settings screen calls
+`engine.updateSettings(vm.settings)` with that stale whole-struct snapshot, and
+`ZarpEngine.updateSettings` wholesale-replaced its own `results`/`selectedStrategyId` with whatever
+that snapshot had at launch. Confirmed on disk: `zarp.json` held results timestamped from a much
+earlier, already-superseded run, matching exactly what a stale launch-time snapshot would contain.
+Fixed in `ZarpEngine.updateSettings`: preserves its own live `results`/`selectedStrategyId` rather
+than trusting the caller's copy of them (`ZarpEngineTests.testUpdateSettingsDoesNotClobberResultsOrSelectedStrategy`
+locks this in). Re-verified for real, not just in the unit test: a real Quick Scan's
+`confirmed: true` result and `selectedStrategyId` survived a disconnect, a real Settings-screen
+change (visible in before/after screenshots: "При закрытии" changed from "Закрывать приложение" to
+"Спрашивать каждый раз"), and a full Cmd+Q + relaunch, with the final reconnect independently
+verified `warp=on`.
+
+**Full checklist, verified against the fixed build, all through the real app on the real
+DPI-restricted network (not synthetic/CLI):**
+
+- Quick Scan and Full Scan both run for real through `zarpd`, with per-strategy progress text
+  (`"N/20: <strategy name>"`) matching zarpd's own log line for line.
+- WireGuard strategies fail cleanly and immediately with zarpd's real `"transport \"wireGuard\" not
+  supported yet"` error — correctly surfaced as a normal failed result, not a hang or crash.
+- Direct/no-desync (`Без zapret`) reliably times out (`"нет подключения за 15 с"`), matching Phase
+  4's original finding; the HTTP/2 direct variant is more variable run to run (sometimes passes,
+  sometimes fails) — consistent with Phase 6's finding that this network's QUIC blocking is more
+  consistent than its handling of plain TLS-over-TCP-443.
+- Working strategies get real connect-ms/ping values (e.g. 216ms/26ms, 134ms/38ms, 155ms/27ms,
+  136ms/26ms across different runs — real, varying numbers, not placeholders).
+- The phase-2 independent recheck genuinely produces `✔✔` only for strategies that pass *twice*;
+  strategies that passed once but failed their recheck correctly show as not confirmed
+  (`"не подтвердилась"`), and the catalog's originally-proven strategy (`fake google ×6`) was
+  observed both confirming and failing its recheck across different runs — real DPI/network
+  variability the double-check mechanism exists to catch, not a bug.
+- Auto-selection connects with the best confirmed candidate and persists the selection.
+- Every connected state was independently verified via `curl https://1.1.1.1/cdn-cgi/trace` →
+  `warp=on`, not just the app's own self-report.
+- Disconnect tears down cleanly: `curl` falls back to the ordinary non-WARP IP, the narrow
+  `1.1.1.1` route disappears from `netstat`, no utun device is left holding an IP.
+- Self-healing fallback exercised for real: pointed `selectedStrategyId` at a strategy with a
+  genuine (not fabricated) failure — an unimplemented WireGuard transport — while leaving
+  previously-confirmed results in place, then pressed Connect once. The saved strategy failed as
+  expected; the engine tried the other previously-confirmed candidates, which *also* failed under
+  that run's real network conditions; it then correctly escalated to a full automatic rescan and
+  connected with whatever that rescan found working, independently verified `warp=on`. A messier,
+  more complete demonstration than "falls back to the known-good strategy" alone — it walked every
+  tier of `ZarpEngine.connect()`'s fallback chain for real.
+
+**Operational finding, not a bug:** the same pre-existing Happ VPN confound from earlier phases
+recurred repeatedly during this phase's multi-minute scans — it auto-reconnects within roughly a
+minute or two of being disconnected, which is long enough to corrupt a scan that started clean. One
+full Quick Scan run had to be discarded and cancelled after `route -n get default` showed Happ's
+`utun` had silently become the default route partway through, producing suspiciously fast "no route
+to host" failures instead of real DPI timeouts. Per explicit user instruction, VPN
+connect/disconnect is never done by Claude directly — only reported, with the user toggling it
+themselves.
+
 ## Phase 8 — install/manage `zarpd` cleanly
 
 - `SMAppService.daemon` registration (one admin authentication at install, matching what the old
