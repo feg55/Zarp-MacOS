@@ -333,15 +333,101 @@ to host" failures instead of real DPI timeouts. Per explicit user instruction, V
 connect/disconnect is never done by Claude directly — only reported, with the user toggling it
 themselves.
 
-## Phase 8 — install/manage `zarpd` cleanly
+## Phase 8 — install/manage `zarpd` cleanly — core mechanism DONE (2026-09-26), uninstall untested live
 
-- `SMAppService.daemon` registration (one admin authentication at install, matching what the old
-  design already planned for its helper — `ARCHITECTURE.md` §7).
-- Crash/restart cleanup: routes and utun must not be left dangling if `zarpd` dies unexpectedly —
-  `ARCHITECTURE.md` §9.3, open question.
-- Uninstall flow: disable/unregister the daemon, remove routes, reset WARP registration state.
-- Notarization, `.dmg`, CI — same shape as the old design's phase 8, not revisited in depth until
-  the earlier phases are real.
+**The load-bearing question, checked before writing anything else:** does `SMAppService.daemon`
+registration actually work under this Mac's free "Personal Team" signing identity, the way
+NetworkExtension turned out not to (`ARCHITECTURE.md` §10)? **Yes, confirmed for real** — unlike
+Network Extensions, `SMAppService` needs no special provisioning-profile capability from Apple at
+all; it only needs the daemon and the app to share a Team ID, which any signing identity gives you.
+
+### Bundle layout and build
+
+`zarpd` is a Go binary, not a Swift/ObjC Xcode target, so `project.yml`'s `Zarp` target gets a
+`postCompileScripts` phase ("Build and embed zarpd daemon") instead of a second target: it runs
+`go build` with `-ldflags="-linkmode external -extldflags -Wl,-sectcreate,__TEXT,__info_plist,..."`
+to embed an `Info.plist` into the compiled Mach-O (Xcode does this automatically for its own
+targets; a bare `go build` doesn't — confirmed the technique works with `otool -s __TEXT
+__info_plist` and `plutil -p` directly on the built binary), copies the result to
+`Zarp.app/Contents/MacOS/zarpd` and a `LaunchDaemon` plist
+(`zarpd/cmd/zarpd/io.github.zarp.mac.zarpd.plist`, `BundleProgram: Contents/MacOS/zarpd`,
+`AssociatedBundleIdentifiers: [io.github.zarp.mac]`) to `Contents/Library/LaunchDaemons/`, then
+codesigns `zarpd` with `$EXPANDED_CODE_SIGN_IDENTITY` — the same identity Xcode is about to sign
+the app itself with. `codesign --verify --deep --strict` on the finished bundle explicitly
+validates `zarpd` as legitimate nested code, not just an orphaned loose file.
+
+### A real, previously-invisible bug this phase surfaced
+
+Building this exposed that **`Resources/Lang` and `Resources/blobs` were never actually being
+copied into the app bundle at all** — not a regression from this phase's changes, a latent bug in
+`project.yml` that this session's own build pattern (`xcodegen generate` + incremental
+`xcodebuild build`, never a full `clean`) had silently masked for the whole session: once resources
+were copied into `DerivedData` from some earlier point, Xcode's incremental build system kept
+reusing that on-disk copy across every later `xcodegen generate`/`xcodebuild build`, even though
+the *generated project itself* had zero `PBXResourcesBuildPhase` entries and zero references to
+`blobs`/`Lang` — confirmed directly by grepping `project.pbxproj`, and reproduced from scratch in
+an isolated minimal `xcodegen` project. Root cause: `resources:` is not a valid top-level target
+key in this xcodegen version (2.46.0) — resource folders belong in `sources:` with an explicit
+`buildPhase: resources`, which xcodegen's own docs confirm and which fixed it immediately, verified
+via a genuine `xcodebuild clean` + rebuild actually producing `Contents/Resources/{blobs,Lang}`
+this time. This means every "real Mac" claim earlier in this document is still true (the app
+really was running with real resources, from a real on-disk copy) but a truly from-scratch clone
+of this repo would have built a broken app until this fix — worth knowing, not just for zarpd.
+
+### IPC socket permissions
+
+The socket moved from `/tmp/zarpd.sock` (world-writable, fine for a manually-run test tool, not
+for a permanently-installed privileged daemon) to `/var/run/zarpd.sock`, `chmod 0660` + `chown`ed
+to macOS's standard `staff` group (every interactive user account is a member by default; service
+accounts normally aren't) — admits real local users, not every local process.
+
+### Start/stop/restart, given what's actually possible without root
+
+A root `LaunchDaemon` genuinely cannot be started or stopped by an unprivileged process — this
+isn't a gap to fill in later, it's a real macOS security boundary. The design that fits it:
+
+- **Start** = `SMAppService.daemon(...).register()` (`ZarpdInstaller.install()`).
+- **Stop** = `.unregister()` (`ZarpdInstaller.uninstall()`) — the only unprivileged way to make a
+  registered system daemon stop, since there's no in-between "installed but paused" state without
+  root.
+- **Restart** = a new `"restart"` IPC method zarpd asks *itself* to act on: closes every live
+  connection, acknowledges the request, then exits non-zero from a separate goroutine (after a
+  short delay so the acknowledgement reaches the caller first). The LaunchDaemon plist's `KeepAlive:
+  {SuccessfulExit: false}` restarts on exactly that — an unsuccessful exit — but deliberately not on
+  a clean shutdown, so this is genuinely distinct from "stop." Needs zero privilege from the calling
+  app, only that the daemon is already running to receive the IPC call.
+
+**Verified for real, end to end, no manual Terminal/sudo from the app's side beyond the one-time
+install approval:**
+1. Clicking "Install" in Settings called `register()`, which triggered the actual OS background-
+   item authorization notification ("'Zarp.app' added items that can run in the background for all
+   users. Allow?") — not a mock, the real system UI.
+2. Approving it in System Settings › General › Login Items & Extensions required a real Touch
+   ID/password prompt (`AXError`/`Operation not permitted` beforehand is the documented, expected
+   pre-approval state, not a bug).
+3. Once approved, launchd started `zarpd` automatically (`ps aux` showed it running as `root`, argv0
+   literally `Contents/MacOS/zarpd` — `BundleProgram`'s own relative path, exactly as configured).
+4. `AppViewModel.pingDaemon()` (`ZarpdClient.ping()`) correctly reported version + live PID.
+5. The new `restart()` IPC call was exercised twice for real (once bare via a raw JSON request,
+   once end-to-end through the fixed build) — both times `KeepAlive` brought the daemon back with a
+   new PID and a fresh socket, no `sudo` involved either time.
+6. A real strategy ("WARP QUIC: fake google ×6") connected successfully through the
+   launchd-managed, resources-bug-fixed daemon — independently verified `warp=on` and a matching
+   `zarpd: open #25 transport=masqueH3 ...` log line.
+
+**Not yet exercised live:** clicking "Uninstall" (`unregister()`) — mechanically the same,
+already-proven-working API surface as `register()`, just not clicked through the real UI yet, since
+doing so tears down the currently-working installed daemon and costs the user another approval
+cycle to reinstall. Also not yet tested: a genuinely from-scratch machine that has never run
+`xcodegen generate`/built this app before (everything above was verified via rebuild-in-place on a
+Mac that had iterated on this exact app many times already this session) — the resources-copy fix
+above should make that scenario work identically, but "should" isn't "verified," so it's flagged
+here rather than assumed.
+
+**Still open, deliberately not built yet:** crash/restart cleanup for routes and utun left dangling
+if `zarpd` dies mid-connection (`ARCHITECTURE.md` §9.3); notarization, `.dmg` packaging, CI — same
+shape as originally planned, not revisited until distribution (as opposed to local install) is
+actually the next goal.
 
 ## Risks
 

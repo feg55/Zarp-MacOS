@@ -2,11 +2,13 @@
 #   xcodegen generate
 # then open Zarp.xcodeproj (or `xcodebuild -project Zarp.xcodeproj -scheme Zarp build`).
 #
-# A single plain app target (ARCHITECTURE.md §2-§6), no entitlements, no System Extension, no
-# LaunchDaemon target here — Zarp talks to the separate `zarpd` daemon (its own Go module, not
-# built by this file at all) over a Unix domain socket (ARCHITECTURE.md §9.4); `zarpd` is run
-# manually for now (`sudo zarpd`), with proper installation still IMPLEMENTATION_PLAN.md phase 8,
-# not built yet.
+# A single plain app target (ARCHITECTURE.md §2-§6), no entitlements, no System Extension. Zarp
+# talks to the separate `zarpd` daemon (its own Go module) over a Unix domain socket
+# (ARCHITECTURE.md §9.4). As of Phase 8, `zarpd` is built from source and embedded into this app's
+# own bundle (Contents/MacOS/zarpd + Contents/Library/LaunchDaemons/*.plist) by the postCompileScripts
+# phase below, and installed via SMAppService.daemon (ZarpdInstaller.swift) — no manual `sudo zarpd`
+# needed once installed. No separate Xcode target for it: it's a Go binary, not Swift/ObjC, so a
+# script phase (not an Xcode target) builds and embeds it.
 name: Zarp
 options:
   bundleIdPrefix: io.github.zarp
@@ -23,13 +25,39 @@ targets:
     platform: macOS
     sources:
       - path: App/Sources/Zarp
-    resources:
       - path: Resources/Lang
+        buildPhase: resources
         type: folder
       - path: Resources/blobs
+        buildPhase: resources
         type: folder
     dependencies:
       - package: ZarpCore
+    postCompileScripts:
+      - name: "Build and embed zarpd daemon"
+        # `basedOnDependencyAnalysis: false` — always run, since we don't declare explicit
+        # input/output file lists (zarpd's own Go build has its own, real incremental caching via
+        # the Go build cache, so this script re-running every time costs a fast no-op `go build`
+        # call, not a full recompile).
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+          DEST="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}"
+          mkdir -p "${DEST}/MacOS" "${DEST}/Library/LaunchDaemons"
+
+          cd "${SRCROOT}/zarpd"
+          INFO_PLIST="${SRCROOT}/zarpd/cmd/zarpd/Info.plist"
+          go build -ldflags="-linkmode external -extldflags -Wl,-sectcreate,__TEXT,__info_plist,${INFO_PLIST}" \
+            -o "${DEST}/MacOS/zarpd" ./cmd/zarpd
+
+          cp "${SRCROOT}/zarpd/cmd/zarpd/io.github.zarp.mac.zarpd.plist" "${DEST}/Library/LaunchDaemons/"
+
+          # Same identity Xcode is about to sign the app itself with — SMAppService requires the
+          # daemon and the app to share a Team ID (ARCHITECTURE.md's Phase 8 notes).
+          IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:--}}"
+          codesign --force --sign "${IDENTITY}" --timestamp=none "${DEST}/MacOS/zarpd"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.zarp.mac

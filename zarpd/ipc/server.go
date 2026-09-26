@@ -10,7 +10,13 @@ import (
 	"net"
 	"os"
 	"sync"
+	"syscall"
 )
+
+// staffGID is macOS's standard `staff` group (20) — every interactive user account is a member by
+// default (System Settings-created accounts, not service/daemon accounts). Used to scope the
+// socket to real local users instead of leaving it world-writable.
+const staffGID = 20
 
 // ConnError is what a Handler returns for a failure that should reach the app as
 // WarpConnectionError(message, timedOut:) — see EngineProtocols.swift. A plain error becomes
@@ -40,10 +46,16 @@ func Serve(ctx context.Context, socketPath string, handler Handler) error {
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", socketPath, err)
 	}
-	// Swift's default file permissions on a freshly-created socket may not be group/other
-	// writable; the app runs as the logged-in user, not root, so it must be able to connect.
-	if err := os.Chmod(socketPath, 0o666); err != nil {
+	// The app runs as the logged-in user, not root, so it must be able to connect — but this
+	// daemon is privileged and (once Phase 8 installs it permanently) always running, so the
+	// socket must not be reachable by every local process either. 0660 + group `staff` admits any
+	// real interactive user account (the realistic threat model on a single-user Mac) while
+	// excluding service/daemon accounts, which normally aren't in `staff`.
+	if err := os.Chmod(socketPath, 0o660); err != nil {
 		log.Printf("ipc: chmod %s: %v", socketPath, err)
+	}
+	if err := syscall.Chown(socketPath, -1, staffGID); err != nil {
+		log.Printf("ipc: chown %s to staff: %v", socketPath, err)
 	}
 	go func() {
 		<-ctx.Done()
