@@ -58,28 +58,47 @@ Confirmed:
 Verified by: running it on this Mac as root, with real `ping` traffic in a second terminal, output
 inspected directly (not summarized by the tool that ran it).
 
-## Phase 3 — WARP MASQUE core on macOS arm64, no DPI tricks yet — IN PROGRESS (2026-09-26)
+## Phase 3 — WARP MASQUE core on macOS arm64, no DPI tricks yet — DONE (2026-09-26)
 
-Deliverables:
-- **Done, verified against real Cloudflare infrastructure:** `zarpd/warp` account registration
-  (`Register`, `HasAccount`, `LoadConfig`, `AccountEndpoint`) and a MASQUE/HTTP3 dial (`DialH3`),
-  built directly on upstream `usque`'s public `api`/`config`/`models` packages (not Android's
-  GPL-3.0 `zarpcore` — see `ARCHITECTURE.md` §8) plus two small original helpers
-  (`zarpd/warp/cert.go`) for the two things upstream only exposes via its own unimportable
-  `internal` package (self-signed cert + EC key pair generation — both trivial, standard
-  `crypto/x509` usage). `zarpd/cmd/warppoc` registered a real (free, anonymous) WARP device and
-  got back a live MASQUE endpoint (`162.159.198.2`); `zarpd/cmd/dialpoc` then performed the actual
-  QUIC/TLS handshake and CONNECT-IP request against that real endpoint and got a session back in
-  ~1 second, closed cleanly. Neither needs root — both ran directly, no sudo help needed.
-- **Not yet done:** wire the resulting `connectip.Conn` to the phase-2 utun
-  (`ipConn.WritePacketBuffer`/`ReadPacketZeroCopy`, the same calls Android's `tunnel.go` makes
-  against its netstack device, now against the real one) — no SOCKS5 proxy, no second network
-  stack. This is genuinely higher-risk than everything above: it needs root (utun) and touches
-  routing, so expect to need the same real-Mac back-and-forth phase 2 did.
-- **Not yet done, not yet researched in depth:** route setup — replace the default route via the
-  utun for general traffic; the WARP endpoint's own socket must still go out the physical
-  interface (`IP_BOUND_IF`/`IPV6_BOUND_IF`, unverified on this exact macOS version — see
-  `ARCHITECTURE.md` §9.3, open question, not guessed at).
+**The core architectural bet is proven: real internet traffic flows utun → MASQUE → Cloudflare →
+back on this Mac, with no NetworkExtension entitlement, no paid Apple Developer Program
+membership, and no SIP change.** `curl --max-time 5 https://1.1.1.1/cdn-cgi/trace` through a
+`zarpd/cmd/tunnelpoc`-managed tunnel returned `warp=on`, colo `HEL`, egress IP `104.28.222.16` — a
+genuine Cloudflare WARP address, not the machine's real one. Same signal Windows and Android Zarp
+both use to confirm a working tunnel.
+
+Delivered:
+- `zarpd/warp`: account registration and MASQUE/HTTP3 dial, built directly on upstream `usque`
+  (not Android's GPL-3.0 `zarpcore` — `ARCHITECTURE.md` §8). Verified standalone first
+  (`warppoc`/`dialpoc`, no root needed) before combining with anything privileged.
+- `zarpd/tunnel`: pumps packets between a real utun (`Read`/`Write`, 4-byte headroom, phase 2) and
+  the MASQUE session's `connectip.Conn` (`WritePacketBuffer`/`ReadPacketZeroCopy`) directly — no
+  userspace netstack, no local SOCKS5 proxy, unlike Android (`ARCHITECTURE.md` §9.1).
+- `zarpd/route`: `CurrentDefault()` (shells out to `route -n get default`, the same pragmatic
+  choice as `ifconfig` for address config) plus `BindUDP` (`IP_BOUND_IF`/`IPV6_BOUND_IF`) —
+  confirmed to actually prevent the WARP control socket from looping back into its own tunnel,
+  which was `ARCHITECTURE.md` §9.3's open question. `AddHostRoute`/`DeleteHostRoute` for now (a
+  single narrow route, not the default route — see below).
+- `zarpd/cmd/tunnelpoc` ties it together and was run as root on this Mac: registered account →
+  bind WARP socket to the physical interface → MASQUE dial → open utun → route exactly one test
+  host (`1.1.1.1`) through it → pump packets → `warp=on` confirmed from a second terminal → clean
+  teardown (route removed, confirmed by re-running `curl` afterward getting the normal, non-WARP
+  answer — not just assumed from the log line saying so).
+
+**Deliberately not yet done, and now the very next thing:** this proves the mechanism with one
+narrow host route, not a default-route replacement — full default-route takeover (all traffic,
+not just one test host) is materially higher blast radius (getting it wrong risks the whole
+Mac's connectivity, not one route) and needs its own careful, incremental verification rather than
+being bundled into this milestone. Also confirmed as a real-world wrinkle worth remembering: on
+this specific Mac, `route -n get default` reported another tunnel interface (`utun8`, presumably
+an existing corporate VPN or similar), not a hardware NIC — `CurrentDefault()` handled that
+correctly (bound to whatever's actually reaching the internet right now, which is the right
+behavior), but it's a reminder that "physical interface" in `ARCHITECTURE.md` §9.3 needs to mean
+"whatever currently gets to the real internet," not literally always Wi-Fi/Ethernet.
+
+Verified by: running it on this Mac as root, with a real `curl` request to a well-known trace
+endpoint in a second terminal, output inspected directly — not summarized, not assumed from a
+success log line.
 - No strategy executor yet — direct connection, to isolate "does MASQUE + real utun work at all"
   from "does the fake-packet trick work."
 
