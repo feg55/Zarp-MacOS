@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -30,14 +31,52 @@ import (
 	"github.com/feg55/zarp-macos/zarpd/warp"
 )
 
+// fakeStepList accumulates one -fake flag per step, format "path[:repeats[:ttl]]" — repeats
+// defaults to 6, ttl to 0 (don't change it). Repeatable so a strategy like "WARP QUIC: fake
+// google + vk" (two steps, each with its own blob) can be expressed on the command line instead
+// of needing a code change per strategy combination.
+type fakeStepList struct {
+	specs []string
+	steps []warp.FakeStep
+}
+
+func (f *fakeStepList) String() string { return strings.Join(f.specs, ",") }
+
+func (f *fakeStepList) Set(spec string) error {
+	parts := strings.Split(spec, ":")
+	path := parts[0]
+	repeats, ttl := 6, 0
+	if len(parts) > 1 {
+		n, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return fmt.Errorf("-fake %q: bad repeats %q: %w", spec, parts[1], err)
+		}
+		repeats = n
+	}
+	if len(parts) > 2 {
+		n, err := strconv.Atoi(parts[2])
+		if err != nil {
+			return fmt.Errorf("-fake %q: bad ttl %q: %w", spec, parts[2], err)
+		}
+		ttl = n
+	}
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("-fake %q: %w", spec, err)
+	}
+	f.specs = append(f.specs, spec)
+	f.steps = append(f.steps, warp.FakeStep{Blob: blob, Repeats: repeats, TTL: ttl})
+	return nil
+}
+
 func main() {
 	configPath := flag.String("config", "/tmp/zarp-warp-config.json", "path to the WARP config written by warppoc")
 	target := flag.String("target", "1.1.1.1", "single host to route through the tunnel for this test")
 	mtu := flag.Int("mtu", 1280, "tunnel MTU (usque/MASQUE supports up to 1280)")
 	duration := flag.Duration("duration", 25*time.Second, "how long to keep the tunnel up")
-	fakeBlob := flag.String("fake-blob", "", "path to a fake-packet blob (e.g. Resources/blobs/quic_initial_www_google_com.bin); empty = no strategy, direct dial")
-	fakeRepeats := flag.Int("fake-repeats", 6, "how many times to send -fake-blob before the real QUIC Initial")
-	fakeTTL := flag.Int("fake-ttl", 0, "if >0, IP TTL to use for the fake packets only (0 = don't change it)")
+	var fakes fakeStepList
+	flag.Var(&fakes, "fake", "repeatable: path/to/blob.bin[:repeats[:ttl]] (repeats default 6, ttl default 0=unchanged); "+
+		"e.g. two -fake flags = google then vk, matching \"WARP QUIC: fake google + vk\". None given = no strategy, direct dial.")
 	flag.Parse()
 
 	cfg, err := warp.LoadConfig(*configPath)
@@ -64,28 +103,25 @@ func main() {
 
 	endpoint := &net.UDPAddr{IP: net.ParseIP(cfg.EndpointV4), Port: 443}
 	socketBefore := udpConn.LocalAddr().String()
-	strategyName := "direct (no fake-blob given)"
-	if *fakeBlob != "" {
-		strategyName = fmt.Sprintf("fake %s x%d ttl=%d", *fakeBlob, *fakeRepeats, *fakeTTL)
+	strategyName := "direct (no -fake given)"
+	if len(fakes.steps) > 0 {
+		strategyName = fmt.Sprintf("fake %s", fakes.String())
 	}
 	fmt.Printf("UDP socket created: local=%s\n", socketBefore)
 	fmt.Printf("target=%s\n", endpoint)
 	fmt.Printf("strategy=%s\n", strategyName)
 	fmt.Printf("(bound to physical interface %s, won't be captured by the utun route below)\n\n", phys.Interface)
 
-	if *fakeBlob != "" {
-		blob, err := os.ReadFile(*fakeBlob)
-		if err != nil {
-			log.Fatalf("reading -fake-blob: %v", err)
-		}
-		steps := []warp.FakeStep{{Blob: blob, Repeats: *fakeRepeats, TTL: *fakeTTL}}
-		packets, sent, err := warp.SendFakes(udpConn, endpoint, steps, func(_, packetIndex, n int) {
-			fmt.Printf("fake %d/%d sent: %d bytes\n", packetIndex+1, *fakeRepeats, n)
+	if len(fakes.steps) > 0 {
+		packets, sent, err := warp.SendFakes(udpConn, endpoint, fakes.steps, func(stepIndex, packetIndex, n int) {
+			step := fakes.steps[stepIndex]
+			fmt.Printf("step %d/%d (%s) fake %d/%d sent: %d bytes\n",
+				stepIndex+1, len(fakes.steps), fakes.specs[stepIndex], packetIndex+1, step.Repeats, n)
 		})
 		if err != nil {
 			log.Fatalf("SendFakes: %v (sent %d packets, %d bytes before failing)", err, packets, sent)
 		}
-		fmt.Printf("(%d fake packet(s) sent, %d bytes total)\n\n", packets, sent)
+		fmt.Printf("(%d fake packet(s) sent across %d step(s), %d bytes total)\n\n", packets, len(fakes.steps), sent)
 	}
 
 	socketNow := udpConn.LocalAddr().String()

@@ -130,12 +130,32 @@ Verified by: running it on this Mac as root, with a real `curl` request to a wel
 endpoint in a second terminal, output inspected directly — not summarized, not assumed from a
 success log line.
 
-## Phase 5 — remaining QUIC strategies
+## Phase 5 — remaining QUIC strategies — mechanism DONE (2026-09-26), parameter sweep open
 
-google ×3/×10, vk ×6, google+vk, `ip_ttl`/`ip6_ttl` variants (TTL sockopts around the fake sends
-only — `ARCHITECTURE.md` §9.2, `ttl_unix.go`'s approach, portable as-is to darwin via its
-`//go:build unix` tag). `badsum` stays optional/open — macOS's non-raw-socket UDP path doesn't
-obviously expose a checksum override; revisit only if the simpler strategies aren't enough.
+`zarpd/warp.SendFakes` already takes an ordered list of `FakeStep{Blob, Repeats, TTL}`, so
+"the remaining strategies" turned out to mostly be *arguments* to code that already existed, not
+new code paths — confirmed by actually exercising the two that were genuinely untested:
+
+- **Multi-step ordering** (`WARP QUIC: fake google + vk`): `zarpd/cmd/tunnelpoc` now takes a
+  repeatable `-fake path[:repeats[:ttl]]` flag. Run with `-fake google...:6:4 -fake vk...:6`: the
+  log shows all 6 google fakes (1200 bytes each, `ip_ttl=4`) completing before any vk fakes start
+  (1357 bytes each, default TTL), same socket confirmed identical before and after both steps,
+  `warp=on` on the same real-DPI network as phase 4. Proves steps genuinely run in order on one
+  socket, not just that two independent blobs each work in isolation.
+- **`ip_ttl` variant**: the same run set `ip_ttl=4` for the google step — `SendFakes`' TTL
+  save/restore path executed with no error and the connection still succeeded, so the sockopt
+  dance (`getTTL`/`setTTL`, `IP_TTL`/`IPV6_UNICAST_HOPS`) is confirmed working on this macOS
+  version, not just compiling.
+- **vk ×6** was exercised as step 2 of the same run.
+
+**Not separately re-tested, deliberately:** google ×3/×10 are pure repeat-count changes to the
+exact same, already-proven code path (×6 already proven twice, in phases 4 and 5) — there's no new
+mechanism there to verify, just a different number, so no marginal evidence to gain from spending
+another real-Mac round-trip on them. `ip6_ttl` follows the same `IPV6_UNICAST_HOPS` sockopt as
+`ip_ttl`'s `IP_TTL` in the same function; genuinely IPv6-specific behavior (does the WARP endpoint
+even offer a v6 dial path the same way) is still open and matters more than re-proving the sockopt
+call itself. `badsum` stays optional/open — macOS's non-raw-socket UDP path doesn't obviously
+expose a checksum override; revisit only if the simpler strategies aren't enough.
 
 ## Phase 6 — HTTP/2 split/disorder
 
