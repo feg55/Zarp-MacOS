@@ -1,100 +1,171 @@
 # Zarp for macOS: implementation plan
 
-Order is fixed: nothing after phase 2 starts until phases 1–2 pass on a real Mac.
+> **Rewritten 2026-09-26** for the architecture pivot in [ARCHITECTURE.md](ARCHITECTURE.md) (Zarp
+> owns the WARP connection itself, via a `zarpd` daemon built on the Go dependencies Zarp-Android's
+> `zarpcore` uses). The old phase list (NEFilterPacketProvider system extension + root injector
+> helper) is kept at the bottom, marked superseded, for the record — phase 1 of it is genuinely
+> done and stays done; nothing after that will be built.
 
-Legend for "Verified by": **Linux** = `swift test` of `ZarpCore` in Docker (possible without a Mac);
-**Mac** = needs an Apple Silicon Mac with Cloudflare WARP installed and a paid Apple Developer account
-(Network Extension entitlement).
+Order is fixed: each phase's exit criteria must actually be verified on a real Mac before starting
+the next one. "Compiles" and "verified" are different claims; don't conflate them.
 
-## Phase 0 — research (done)
+## Phase 1 — Swift project compiles and tests pass — DONE (2026-09-25)
 
-- `_reference/` with the 4 upstream repositories (ignored by git).
-- `docs/MACOS_NETWORK_RESEARCH.md`, `docs/ARCHITECTURE.md`, this file.
+Verified on a real Mac, not assumed:
+- `cd Packages/ZarpCore && swift build && swift test`: clean, 52/52 tests, including 20 repeated
+  runs of a scan-cancellation test that had a real race (fixed, not papered over).
+- `xcodegen generate` + `xcodebuild build` for the `Zarp` app target: clean, zero warnings.
+- The app actually launched and was visually inspected (screenshots, not just "should render"):
+  main window, close confirmation (both "Hide to menu bar" and titlebar-close paths, via a real
+  `NSWindowDelegate`), Settings, Strategies table (all 14 built-in strategies, correct "not
+  tested" status), English and German. Two real bugs found this way and fixed: a `Text` view
+  truncating instead of wrapping (missing `.fixedSize`), and a translation still saying "Windows"
+  in 7 non-English language files for the one key that's a live macOS feature.
 
-## Phase 1 — network PoC: can we see and hold the WARP handshake?
+This phase's outcome doesn't change with the architecture pivot — `ZarpCore` and the UI are
+unaffected (see `ARCHITECTURE.md` §2–§6). What changes is everything after it.
 
-Deliverables (in the repo now):
-- `Packages/ZarpCore`: packet parser (IPv4/IPv6, optional Ethernet header), WARP ranges, QUIC Initial detector
-  (the Windows filter rule), flow key, IPv4/UDP frame builder with checksums, strategy-args parser, built-in catalog,
-  blob registry, IPC types. Unit tests.
-- `PoC/Filter`: `NEFilterPacketProvider` with modes `off | observe | active`, flow table, per-flow event log.
-- `PoC/Helper`: root LaunchDaemon, raw IPv4 sender, connects to the filter over XPC.
-- `PoC/App`: minimal window + `--cli` commands (activate, enable/disable filter, register helper, mode, snapshot, test).
-- `tools/poc-run.sh`: preflight (WARP, warp-cli, SIP, interfaces), capture with tcpdump, run scenarios, collect logs.
-- `project.yml` for XcodeGen.
+## Phase 2 — CLI prototype: open a real utun, move packets, close cleanly
 
-Exit criteria on a Mac (research §6):
-1. Q7: `tools/poc-run.sh preflight` passes (warp-cli commands work).
-2. Q1/Q2: `observe` mode logs WARP QUIC Initials: destination, port, protocol, sizes, `l3Offset`.
-3. Q3: `active` + `direct` (delay only, no fakes) still reaches `Connected` and `warp=on`.
-4. Q4: helper sends a raw frame, the byte-order choice is logged.
+No GUI, no WARP, no MASQUE yet. The single question: can a small Go program, run as root, create
+a real macOS utun device, read and write packets on it, and close it cleanly, without needing
+Apple entitlements, System Extensions, or SIP changes?
 
-Verified by: Linux (ZarpCore), Mac (rest).
+Deliverables:
+- A new Go module (`zarpd/`, `go.mod` targeting `darwin/arm64`) depending directly on
+  `golang.zx2c4.com/wireguard` (for `tun.CreateTUN`, the same package Android's `zarpcore` already
+  depends on, just its real-device constructor instead of `netstack.CreateNetTUN` — see
+  `ARCHITECTURE.md` §9.1).
+- `zarpd/cmd/tunpoc`: opens a utun, assigns it a private IPv4 address (e.g. `10.66.0.1/24`) and
+  MTU, logs every packet it reads (size, IP version, protocol) for a few seconds, then closes the
+  device and exits — verifying the OS state is actually clean afterward (`ifconfig` no longer
+  lists it, no leftover route).
+- Confirm what privilege level this actually needs (utun creation is traditionally root-only on
+  BSD-family kernels, but confirm on this exact macOS version rather than assume) and whether
+  `sudo` is sufficient for this CLI-only step, deferring the real `SMAppService.daemon`
+  installation question to phase 8.
 
-## Phase 2 — one working QUIC strategy
+Exit criteria: utun visible in `ifconfig` while the tool runs, `ping 10.66.0.1` (or sending a
+crafted packet into the device with e.g. `nc`/a second small Go program) actually produces a
+packet the tool reads, and the interface is gone afterward with no manual cleanup needed.
 
-`WARP QUIC: fake google ×6` end-to-end:
-- filter delays the first Initial, helper sends 6 × `quic_initial_www_google_com.bin` with the same 5-tuple, filter releases the Initial;
-- Q5: the filter's per-flow log and the tcpdump capture both show `fake ×6 → real Initial` on one 5-tuple;
-- Q6: `warp=on`; connect time and ping recorded as in Windows (`cdn-cgi/trace`, median of 3 after warm-up).
+Verified by: running it, on this Mac, watching `ifconfig`/`netstat -rn` before/during/after.
 
-If Q1, Q3 or Q5 fail and cannot be fixed → stop and switch to the fallback (research §8), re-plan phases 3–8.
+## Phase 3 — WARP MASQUE core on macOS arm64, no DPI tricks yet
 
-## Phase 3 — strategy engine
+Deliverables:
+- `zarpd/warp`: account registration (`Register`, `HasAccount`, `AccountEndpoint` — thin wrappers
+  around `usque/api`, essentially a direct reimplementation of Android's `account.go`, which has
+  no Android-specific dependencies at all) and a MASQUE dial (HTTP/3 first, following Android
+  `dial.go`'s `dialH3` sequence minus the SocketFactory/JNI round-trip — see `ARCHITECTURE.md`
+  §9.2) that returns a `connectip.Conn`.
+- Wire that `connectip.Conn` directly to the phase 2 utun (`s.ipConn.WritePacketBuffer` /
+  `ReadPacketZeroCopy`, the same calls Android's `tunnel.go` makes against its netstack device,
+  now against the real one) — no SOCKS5 proxy, no second network stack.
+- Route setup: replace the default route via the utun for general traffic; the WARP endpoint's own
+  socket must still go out the physical interface (`IP_BOUND_IF`/`IPV6_BOUND_IF`, unverified on
+  this exact macOS version — see `ARCHITECTURE.md` §9.3, open question, not guessed at).
+- No strategy executor yet — direct connection, to isolate "does MASQUE + real utun work at all"
+  from "does the fake-packet trick work."
 
-- All QUIC strategies: google ×3/×6/×10, vk ×6, google + vk, `ip_ttl`/`ip6_ttl` variants; `badsum` (optional).
-- `ZarpEngine` port of `Engine.cs`: Connect, Quick scan (stop after N), Full scan, Test selected, Use, Disconnect, Cancel;
-  phase-2 re-check on another endpoint; score `connect + 4×ping`; confirmed merge; save working strategy;
-  endpoint isolation via `warp-cli tunnel endpoint set`, reset afterwards; transport switching with the
-  Windows "wait until the protocol is applied" logic.
-- `Tester` protocol so the engine is testable with fakes (port of the Windows/Android engine tests).
-- WireGuard fakes (same mechanism, other detector) if time allows. TLS split/disorder behind a raw-TCP spike (unverified on macOS).
+Exit criteria: register a WARP account, connect, and have *ordinary internet traffic on this Mac*
+actually flow through the tunnel — verified with `curl https://www.cloudflare.com/cdn-cgi/trace`
+showing `warp=on`, and a basic browsing/ping sanity check that nothing else on the Mac lost
+connectivity (the routing loop risk in `ARCHITECTURE.md` §9.3).
 
-Verified by: Linux (engine with fake Tester, parser, scoring), Mac (real scans).
+Verified by: running it, on this Mac, with real network traffic — not a mock.
 
-## Phase 4 — UI
+## Phase 4 — one Zarp strategy: `WARP QUIC: fake google ×6`
 
-- Theme, PowerButton, DarkButton, ToggleSwitch, NumberBox, DarkSelect, strategy `NSTableView` (ARCHITECTURE §5).
-- Main window, settings window, close prompt, menu bar item, language menu.
-- Snapshot tests: render every window in every language at 1× and 2×, fail on clipped/overlapping text
-  (the same idea as Windows `tests/Zarp.Tests`).
+Deliverables:
+- The socket-reuse trick itself (`ARCHITECTURE.md` §9.2): open the UDP socket, bind it to the
+  physical interface, send `quic_initial_www_google_com.bin` (already vendored in
+  `Resources/blobs/`, MIT) ×6 through it, then hand that same socket to quic-go for the real
+  Initial.
+- Confirm — with a packet capture (`tcpdump`), not just application-level success — that the fakes
+  and the real Initial share one 5-tuple and leave in that order.
 
-Verified by: Mac (Xcode, XCTest snapshot rendering).
+Exit criteria: `warp=on` via `cdn-cgi/trace`, connect time and ping recorded the same way as
+Windows (median of 3 after one warm-up), and the tcpdump capture actually shows `fake ×6 → real
+Initial` on one flow.
 
-## Phase 5 — Quick/Full Scan polish
+## Phase 5 — remaining QUIC strategies
 
-Progress `[n/m]`, cancel at any point (stops scan, resets endpoint, disconnects), tooltips with the stop-after
-count / total, results persisted after each test, custom strategies file (open in default editor, reload on return).
+google ×3/×10, vk ×6, google+vk, `ip_ttl`/`ip6_ttl` variants (TTL sockopts around the fake sends
+only — `ARCHITECTURE.md` §9.2, `ttl_unix.go`'s approach, portable as-is to darwin via its
+`//go:build unix` tag). `badsum` stays optional/open — macOS's non-raw-socket UDP path doesn't
+obviously expose a checksum override; revisit only if the simpler strategies aren't enough.
 
-## Phase 6 — self-healing
+## Phase 6 — HTTP/2 split/disorder
 
-- Connect: saved → other confirmed (by score) → quick scan (Windows `ConnectAsync`).
-- Watch `warp-cli -j status`: if WARP drops while Zarp says Connected, re-apply the strategy; after N failures run the Connect flow.
-- Network change (`NWPathMonitor`): the next WARP reconnect gets fakes automatically (new 5-tuple); verify `warp=on` again.
-- Extension/helper crash: detect via XPC invalidation, re-register, log.
+The MASQUE-over-HTTP/2 dial (`dialH2` in Android's `dial.go`, minus `VpnService.protect` which
+becomes the same `IP_BOUND_IF` binding as phase 3/4) plus the TLS ClientHello desync wrapper
+(`desync.go` — already 100% portable Go stdlib, reimplemented directly, see `ARCHITECTURE.md`
+§9.2 and §8 on why reimplemented rather than copied).
 
-## Phase 7 — settings, logs, localization
+## Phase 7 — connect the backend to the existing Swift engine and UI
 
-- Options: auto-connect, start with macOS (`SMAppService.mainApp`), on close, disconnect on exit, WARP addresses only,
-  isolate tests, timeout, quick-scan count; data folder, licenses.
-- Log panel + file log; extension/helper events merged in.
-- 8 languages from Windows `Lang/*.txt` + `mac.*` keys; key/placeholder parity test (Linux).
+- `ZarpdClient`: a `WarpConnectionProvider` + `WarpProbe` implementation (`EngineProtocols.swift`)
+  that talks to `zarpd` over IPC (shape TBD, `ARCHITECTURE.md` §9.4) instead of throwing
+  `Unimplemented*` errors.
+- `NetworkInspector` real implementation — narrower scope now than the old design assumed, since
+  Zarp owns the tunnel outright rather than needing to detect interference from other VPN adapters
+  the way a packet filter sitting beside the official WARP client would have.
+- `ZarpEngine`'s Connect/Quick Scan/Full Scan/self-healing logic is unchanged — it was written
+  against the `WarpConnectionProvider`/`WarpProbe` protocols, not against any concrete backend, so
+  this phase is wiring, not re-architecture.
 
-## Phase 8 — packaging and signing
+Verified by: real Connect/Scan flows in the actual running app, screenshots, not just "should work."
 
-- Developer ID Application certificate, NE entitlement `content-filter-provider-systemextension`, provisioning profiles for app and extension.
-- Hardened runtime, notarization (`notarytool`), stapling, `.dmg`.
-- First-run flow: move to /Applications → approve system extension → allow content filter → approve helper in Login Items.
-- Uninstall: disable filter, deactivate extension, unregister helper, `warp-cli tunnel … reset` like the Windows README.
-- CI: GitHub Actions macOS runner builds, runs tests, notarizes on tags.
+## Phase 8 — install/manage `zarpd` cleanly
+
+- `SMAppService.daemon` registration (one admin authentication at install, matching what the old
+  design already planned for its helper — `ARCHITECTURE.md` §7).
+- Crash/restart cleanup: routes and utun must not be left dangling if `zarpd` dies unexpectedly —
+  `ARCHITECTURE.md` §9.3, open question.
+- Uninstall flow: disable/unregister the daemon, remove routes, reset WARP registration state.
+- Notarization, `.dmg`, CI — same shape as the old design's phase 8, not revisited in depth until
+  the earlier phases are real.
 
 ## Risks
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Filter does not see WARP packets (Q1) | Desktop model impossible | Fallback architecture |
-| Delay makes the WARP handshake fail (Q3) | Same | Measure delay; keep injection under a few ms; fallback |
-| Raw send blocked or changed in a future macOS | Fakes not sent | Helper logs errors; engine marks strategies failed; fallback |
-| NE entitlement / notarization process | Cannot distribute | Apply early (phase 1 needs the entitlement anyway) |
-| Raw TCP send not allowed on macOS | No H2 split/disorder | Show as unsupported; QUIC is WARP's default transport |
-| User runs another VPN or content filter | Wrong scan results | Same warning as Windows; filter order is not controllable (Apple DTS) |
+| `IP_BOUND_IF`/route-exclusion doesn't cleanly prevent a loop (`ARCHITECTURE.md` §9.3) | WARP control traffic gets routed back into its own tunnel, connection can't establish | Phase 3's exit criteria specifically tests this with real traffic before building anything on top |
+| utun creation needs more privilege/entitlement than expected | Blocks phase 2 outright | Phase 2 is deliberately the very first thing tried, before any WARP/MASQUE code exists to waste |
+| MASQUE dial works but real utun packet pumping has framing/MTU issues netstack would have hidden | Silent packet loss or corruption | Phase 3's exit criteria requires real traffic, not just a successful handshake |
+| Reimplementing (not copying) Android's dial/desync logic introduces subtle bugs the proven code didn't have | Wasted debugging time | Reference Android's code closely while writing macOS's version (`ARCHITECTURE.md` §9.2 documents exactly what's being reimplemented and why), and verify each phase's exit criteria with real network captures, not just "connects" |
+| User runs another VPN | Routing conflicts | Detect and warn, same spirit as Windows' `IsForeignVpnAdapter` check — design once phase 7's `NetworkInspector` is written |
+
+---
+
+## Superseded: NEFilterPacketProvider / System Extension plan (kept for the record)
+
+This was the plan before the 2026-09-26 pivot (`ARCHITECTURE.md` §10). Phase 1 below is the same
+phase 1 above (unaffected by the pivot). Phases past it were **rejected**, not merely deprioritized
+— a free Apple Developer "Personal Team" account was confirmed, empirically, unable to get the
+Network Extensions or System Extension capability at all, and the only ways past that (a paid
+Apple Developer Program membership, or disabling SIP for local-only `systemextensionsctl developer
+on` loading) are exactly what the new architecture exists to avoid requiring for basic
+functionality. Nothing past phase 1 below will be built; kept only so the reasoning isn't lost.
+
+### Phase 1 — research (done)
+
+- `_reference/` with the 4 upstream repositories (ignored by git).
+- `docs/MACOS_NETWORK_RESEARCH.md`, `docs/ARCHITECTURE.md`, this file (all now superseded/rewritten).
+
+### Phase 2 (superseded) — network PoC: can we see and hold the WARP handshake?
+
+Deliverables that were actually built before rejection: `Packages/ZarpCore`'s parser/detector
+pieces were never written (the packet parser, QUIC Initial detector, flow key, and IPv4/UDP frame
+builder this phase called for turned out not to exist yet when checked against the real repo —
+only `Support/IPAddress.swift` and `WarpAddressRanges.swift` did). `PoC/Filter` — a minimal
+`NEFilterPacketProvider` system extension target — was built far enough to get the account-tier
+signing error above; `PoC/Helper` and `PoC/App`'s CLI were never started.
+
+### Phases 3–8 (superseded)
+
+One working QUIC strategy end-to-end via packet delay+injection, full strategy engine, UI
+(already done independently of this — see phase 1 above and `ARCHITECTURE.md` §5), Quick/Full
+Scan polish, self-healing, settings/logs/localization (also already done), packaging and signing.
+None of these were reached; the architecture they were designed for is rejected.
