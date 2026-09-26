@@ -58,20 +58,28 @@ Confirmed:
 Verified by: running it on this Mac as root, with real `ping` traffic in a second terminal, output
 inspected directly (not summarized by the tool that ran it).
 
-## Phase 3 — WARP MASQUE core on macOS arm64, no DPI tricks yet
+## Phase 3 — WARP MASQUE core on macOS arm64, no DPI tricks yet — IN PROGRESS (2026-09-26)
 
 Deliverables:
-- `zarpd/warp`: account registration (`Register`, `HasAccount`, `AccountEndpoint` — thin wrappers
-  around `usque/api`, essentially a direct reimplementation of Android's `account.go`, which has
-  no Android-specific dependencies at all) and a MASQUE dial (HTTP/3 first, following Android
-  `dial.go`'s `dialH3` sequence minus the SocketFactory/JNI round-trip — see `ARCHITECTURE.md`
-  §9.2) that returns a `connectip.Conn`.
-- Wire that `connectip.Conn` directly to the phase 2 utun (`s.ipConn.WritePacketBuffer` /
-  `ReadPacketZeroCopy`, the same calls Android's `tunnel.go` makes against its netstack device,
-  now against the real one) — no SOCKS5 proxy, no second network stack.
-- Route setup: replace the default route via the utun for general traffic; the WARP endpoint's own
-  socket must still go out the physical interface (`IP_BOUND_IF`/`IPV6_BOUND_IF`, unverified on
-  this exact macOS version — see `ARCHITECTURE.md` §9.3, open question, not guessed at).
+- **Done, verified against real Cloudflare infrastructure:** `zarpd/warp` account registration
+  (`Register`, `HasAccount`, `LoadConfig`, `AccountEndpoint`) and a MASQUE/HTTP3 dial (`DialH3`),
+  built directly on upstream `usque`'s public `api`/`config`/`models` packages (not Android's
+  GPL-3.0 `zarpcore` — see `ARCHITECTURE.md` §8) plus two small original helpers
+  (`zarpd/warp/cert.go`) for the two things upstream only exposes via its own unimportable
+  `internal` package (self-signed cert + EC key pair generation — both trivial, standard
+  `crypto/x509` usage). `zarpd/cmd/warppoc` registered a real (free, anonymous) WARP device and
+  got back a live MASQUE endpoint (`162.159.198.2`); `zarpd/cmd/dialpoc` then performed the actual
+  QUIC/TLS handshake and CONNECT-IP request against that real endpoint and got a session back in
+  ~1 second, closed cleanly. Neither needs root — both ran directly, no sudo help needed.
+- **Not yet done:** wire the resulting `connectip.Conn` to the phase-2 utun
+  (`ipConn.WritePacketBuffer`/`ReadPacketZeroCopy`, the same calls Android's `tunnel.go` makes
+  against its netstack device, now against the real one) — no SOCKS5 proxy, no second network
+  stack. This is genuinely higher-risk than everything above: it needs root (utun) and touches
+  routing, so expect to need the same real-Mac back-and-forth phase 2 did.
+- **Not yet done, not yet researched in depth:** route setup — replace the default route via the
+  utun for general traffic; the WARP endpoint's own socket must still go out the physical
+  interface (`IP_BOUND_IF`/`IPV6_BOUND_IF`, unverified on this exact macOS version — see
+  `ARCHITECTURE.md` §9.3, open question, not guessed at).
 - No strategy executor yet — direct connection, to isolate "does MASQUE + real utun work at all"
   from "does the fake-packet trick work."
 
