@@ -1,19 +1,12 @@
 # XcodeGen spec for the Zarp macOS app. Generate the Xcode project with:
 #   xcodegen generate
-# then open Zarp.xcodeproj.
+# then open Zarp.xcodeproj (or `xcodebuild -project Zarp.xcodeproj -scheme Zarp build`).
 #
-# UNVERIFIED: written without Xcode or a macOS machine available (see
-# docs/IMPLEMENTATION_PLAN.md) — `xcodegen generate` has never been run against this file. It
-# covers only the plain app target described in docs/ARCHITECTURE.md §2–§5 (UI + ZarpCore).
-# It deliberately does NOT define a system extension, a LaunchDaemon helper target, entitlements,
-# or a Network Extension capability — see docs/MACOS_NETWORK_RESEARCH.md and
-# docs/IMPLEMENTATION_PLAN.md phase 1 for why those wait for the real-Mac proof of concept.
-#
-# Particularly likely to need a fix once this is actually generated:
-#  - Whether `resources:` with `type: folder` is really the right way to get a folder reference
-#    (as opposed to a flattened group) for Resources/Lang, so that
-#    `Bundle.main.resourceURL?.appendingPathComponent("Lang")` in ZarpApp.swift finds it. See that
-#    file's doc comment for the fallback path this relies on until it's confirmed.
+# A single plain app target (ARCHITECTURE.md §2-§6), no entitlements, no System Extension, no
+# LaunchDaemon target here — Zarp talks to the separate `zarpd` daemon (its own Go module, not
+# built by this file at all) over a Unix domain socket (ARCHITECTURE.md §9.4); `zarpd` is run
+# manually for now (`sudo zarpd`), with proper installation still IMPLEMENTATION_PLAN.md phase 8,
+# not built yet.
 name: Zarp
 options:
   bundleIdPrefix: io.github.zarp
@@ -37,8 +30,6 @@ targets:
         type: folder
     dependencies:
       - package: ZarpCore
-      - target: ZarpFilter
-        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.zarp.mac
@@ -47,15 +38,12 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         ENABLE_HARDENED_RUNTIME: true
-        # Ad-hoc, not the free Personal Team: Network Extensions/System Extension aren't available
-        # to a Personal Team at all (confirmed directly by Apple's provisioning server — see
-        # docs/MACOS_NETWORK_RESEARCH.md). Xcode's own signing phase won't ad-hoc-sign a target
-        # with capability-requiring entitlements even with CODE_SIGN_IDENTITY=-, so signing is
-        # done manually after the build (see tools/poc-run.sh) instead of through xcodebuild.
-        # Only works with SIP off + `systemextensionsctl developer on`, for local PoC testing —
-        # not how this app will ultimately ship.
-        CODE_SIGNING_ALLOWED: NO
-        CODE_SIGN_ENTITLEMENTS: App/Zarp.entitlements
+        # Plain app, no entitlements needed — the architecture pivot (ARCHITECTURE.md §9-10) means
+        # Zarp no longer needs any Apple capability at all, System Extension or otherwise. A free
+        # Personal Team signs this fine (confirmed: phases 1-3 built and ran this way before the
+        # since-removed NetworkExtension experiment added entitlements this target no longer has).
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: G86X3LK72R
     info:
       path: Generated/Zarp-Info.plist
       properties:
@@ -66,31 +54,9 @@ targets:
         LSUIElement: false
         NSHumanReadableCopyright: "Zarp is an independent project, not affiliated with or endorsed by Cloudflare."
 
-  ZarpFilter:
-    type: system-extension
-    platform: macOS
-    sources:
-      - path: PoC/Filter
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.github.zarp.mac.filter
-        PRODUCT_NAME: ZarpFilter
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
-        SWIFT_VERSION: "5.9"
-        ENABLE_HARDENED_RUNTIME: true
-        CODE_SIGNING_ALLOWED: NO
-        CODE_SIGN_ENTITLEMENTS: PoC/Filter/ZarpFilter.entitlements
-        SKIP_INSTALL: YES
-    info:
-      path: Generated/ZarpFilter-Info.plist
-      properties:
-        CFBundleDisplayName: Zarp Filter
-        NSSystemExtensionUsageDescription: "Zarp uses this system extension to observe, and later briefly delay, the first packet of a new Cloudflare WARP connection so DPI-evading strategies can be tested. It does not read or forward unrelated network traffic."
-        NetworkExtension:
-          NEMachServiceName: "$(TeamIdentifierPrefix)io.github.zarp.mac.filter"
-          NEProviderClasses:
-            com.apple.networkextension.filter-packet: $(PRODUCT_MODULE_NAME).FilterPacketProvider
+  # ZarpFilter (NEFilterPacketProvider) was removed from the build entirely — the architecture
+  # pivot (ARCHITECTURE.md §10) rejected that approach. Its source is kept at PoC/Filter/ as a
+  # record, per that section, but is no longer part of what this file builds.
 
   ZarpCoreTests:
     type: bundle.unit-test
