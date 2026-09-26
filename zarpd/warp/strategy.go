@@ -6,11 +6,7 @@ package warp
 // implements, reimplemented directly against Go's syscall package rather than adapted from it
 // (it has no Android-specific concept in it to begin with).
 
-import (
-	"net"
-
-	"golang.org/x/sys/unix"
-)
+import "net"
 
 // FakeStep is one `fake:blob=B:repeats=N[:ip_ttl=N]` step from a strategy's DesyncPlan
 // (ZarpCore's parsed representation, mirrored here rather than imported — zarpd is a separate
@@ -29,15 +25,16 @@ type FakeStep struct {
 // can make the fake/real ordering explicit in its own log rather than this function guessing what
 // level of detail matters to it.
 func SendFakes(conn *net.UDPConn, endpoint *net.UDPAddr, steps []FakeStep, onSent func(stepIndex, packetIndex int, n int)) (packets, bytes int, err error) {
+	v6 := conn.LocalAddr().(*net.UDPAddr).IP.To4() == nil
 	for si, step := range steps {
 		var normal int
 		lowered := false
 		if step.TTL > 0 {
-			normal, err = getTTL(conn)
+			normal, err = getTTL(conn, v6)
 			if err != nil {
 				return packets, bytes, err
 			}
-			if err = setTTL(conn, step.TTL); err != nil {
+			if err = setTTL(conn, v6, step.TTL); err != nil {
 				return packets, bytes, err
 			}
 			lowered = true
@@ -46,7 +43,7 @@ func SendFakes(conn *net.UDPConn, endpoint *net.UDPAddr, steps []FakeStep, onSen
 			n, werr := conn.WriteToUDP(step.Blob, endpoint)
 			if werr != nil {
 				if lowered {
-					_ = setTTL(conn, normal)
+					_ = setTTL(conn, v6, normal)
 				}
 				return packets, bytes, werr
 			}
@@ -57,51 +54,10 @@ func SendFakes(conn *net.UDPConn, endpoint *net.UDPAddr, steps []FakeStep, onSen
 			}
 		}
 		if lowered {
-			if err = setTTL(conn, normal); err != nil {
+			if err = setTTL(conn, v6, normal); err != nil {
 				return packets, bytes, err
 			}
 		}
 	}
 	return packets, bytes, nil
-}
-
-func getTTL(conn *net.UDPConn) (int, error) {
-	v6 := conn.LocalAddr().(*net.UDPAddr).IP.To4() == nil
-	raw, err := conn.SyscallConn()
-	if err != nil {
-		return 0, err
-	}
-	var ttl int
-	var serr error
-	cerr := raw.Control(func(fd uintptr) {
-		if v6 {
-			ttl, serr = unix.GetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_UNICAST_HOPS)
-		} else {
-			ttl, serr = unix.GetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_TTL)
-		}
-	})
-	if cerr != nil {
-		return 0, cerr
-	}
-	return ttl, serr
-}
-
-func setTTL(conn *net.UDPConn, ttl int) error {
-	v6 := conn.LocalAddr().(*net.UDPAddr).IP.To4() == nil
-	raw, err := conn.SyscallConn()
-	if err != nil {
-		return err
-	}
-	var serr error
-	cerr := raw.Control(func(fd uintptr) {
-		if v6 {
-			serr = unix.SetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_UNICAST_HOPS, ttl)
-		} else {
-			serr = unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_TTL, ttl)
-		}
-	})
-	if cerr != nil {
-		return cerr
-	}
-	return serr
 }

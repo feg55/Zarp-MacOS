@@ -28,6 +28,7 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/yosida95/uritemplate/v3"
+	"golang.org/x/net/http2"
 )
 
 // These two hostnames/URLs are Cloudflare protocol constants (not usque's own design), the same
@@ -39,14 +40,19 @@ const (
 	connectURI = "https://cloudflareaccess.com"
 )
 
-// Session is one established CONNECT-IP tunnel: the packet-level handle phase 3's utun wiring
-// (not yet written) will read/write against, plus everything needed to close it cleanly.
+// Session is one established CONNECT-IP tunnel: the packet-level handle the utun wiring
+// (zarpd/tunnel) reads/writes against, plus everything needed to close it cleanly. Exactly one of
+// the HTTP/3 fields (udpConn/qconn/tr) or the HTTP/2 field (h2Transport) is set, depending on
+// which Dial* function produced it.
 type Session struct {
 	IPConn *connectip.Conn
 
 	udpConn *net.UDPConn
 	qconn   *quic.Conn
 	tr      *http3.Transport
+
+	h2Transport *http2.Transport
+	h2Cancel    context.CancelFunc // cancels the context the H2 CONNECT-IP stream is bound to
 }
 
 // Close tears the session down in reverse order, safe to call once.
@@ -62,6 +68,12 @@ func (s *Session) Close() {
 	}
 	if s.udpConn != nil {
 		_ = s.udpConn.Close()
+	}
+	if s.h2Transport != nil {
+		s.h2Transport.CloseIdleConnections()
+	}
+	if s.h2Cancel != nil {
+		s.h2Cancel()
 	}
 }
 
@@ -142,6 +154,79 @@ func DialH3(ctx context.Context, udpConn *net.UDPConn, endpoint *net.UDPAddr, tl
 		return nil, fmt.Errorf("connect-ip: %s", rsp.Status)
 	}
 	return &Session{IPConn: ipConn, udpConn: udpConn, qconn: qconn, tr: tr}, nil
+}
+
+// DialH2 performs the MASQUE-over-HTTP/2 handshake and CONNECT-IP request, for networks (or DPI)
+// that block QUIC/UDP outright — the fallback transport, same role as Android's dialH2. dialer's
+// Control (if set) is what keeps this TCP connection on the physical interface, the same job
+// BindUDP does for DialH3's socket — see route.Physical.Control. desync, if non-nil, splits the
+// TLS ClientHello per spec (desync.go); pass nil to dial plainly.
+//
+// Unlike DialH3 (where the QUIC connection is a separate object quic-go manages, independent of
+// any Go context), HTTP/2's CONNECT-IP stream lives exactly as long as the context passed to
+// connectip.DialH2 — so ctx here must be the *session's* lifetime (background/daemon-scoped, not
+// already deadline-bound), and connectTimeout only gets to abort the dial itself: reqCtx is a
+// child of ctx that's wired to auto-cancel if connectTimeout fires before the dial finishes, and
+// that wiring is severed (stop()) the instant the dial returns, success or not — otherwise the
+// returned Session would be torn down the moment this function returns, before the caller ever
+// gets to use it.
+func DialH2(ctx context.Context, dialer *net.Dialer, endpoint *net.TCPAddr, tlsConfig *tls.Config, desync *DesyncSpec, connectTimeout time.Duration) (*Session, error) {
+	reqCtx, reqCancel := context.WithCancel(ctx)
+	timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), connectTimeout)
+	defer timeoutCancel()
+	stop := context.AfterFunc(timeoutCtx, reqCancel)
+
+	h2TLSConfig := tlsConfig.Clone()
+	h2TLSConfig.NextProtos = []string{"h2"}
+
+	transport := &http2.Transport{
+		DialTLSContext: func(ctx context.Context, network, _ string, _ *tls.Config) (net.Conn, error) {
+			raw, err := dialer.DialContext(ctx, network, endpoint.String())
+			if err != nil {
+				return nil, err
+			}
+			tcpConn, ok := raw.(*net.TCPConn)
+			if !ok {
+				_ = raw.Close()
+				return nil, fmt.Errorf("dialed connection is %T, not *net.TCPConn", raw)
+			}
+			var conn net.Conn = tcpConn
+			if desync != nil {
+				conn = NewDesyncConn(tcpConn, desync, h2TLSConfig.ServerName)
+			}
+			tlsConn := tls.Client(conn, h2TLSConfig)
+			if err := tlsConn.HandshakeContext(ctx); err != nil {
+				_ = raw.Close()
+				return nil, err
+			}
+			return tlsConn, nil
+		},
+	}
+	client := &http.Client{Transport: transport}
+	headers := http.Header{"User-Agent": []string{""}}
+	headers.Set("cf-connect-proto", "cf-connect-ip")
+	headers.Set("pq-enabled", "false") // TODO: post-quantum, once PQC is verified to work over H2 here
+	template := uritemplate.MustNew(connectURI)
+
+	ipConn, rsp, err := connectip.DialH2(reqCtx, client, template, headers)
+	stopped := stop()
+	if err != nil {
+		reqCancel()
+		transport.CloseIdleConnections()
+		if !stopped && ctx.Err() == nil {
+			// The timeout fired (stop couldn't stop it) but the caller's own ctx is still fine —
+			// make it clear this was our connectTimeout, not the caller's context, that gave up.
+			err = fmt.Errorf("timeout after %s: %w", connectTimeout, err)
+		}
+		return nil, wrapDialErr(fmt.Errorf("connect-ip over HTTP/2: %w", err))
+	}
+	if rsp.StatusCode != http.StatusOK {
+		_ = ipConn.Close()
+		reqCancel()
+		transport.CloseIdleConnections()
+		return nil, fmt.Errorf("connect-ip over HTTP/2: %s", rsp.Status)
+	}
+	return &Session{IPConn: ipConn, h2Transport: transport, h2Cancel: reqCancel}, nil
 }
 
 func wrapDialErr(err error) error {

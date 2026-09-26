@@ -157,12 +157,47 @@ even offer a v6 dial path the same way) is still open and matters more than re-p
 call itself. `badsum` stays optional/open — macOS's non-raw-socket UDP path doesn't obviously
 expose a checksum override; revisit only if the simpler strategies aren't enough.
 
-## Phase 6 — HTTP/2 split/disorder
+## Phase 6 — HTTP/2 split/disorder — mostly DONE (2026-09-26), `disorder` mode open
 
-The MASQUE-over-HTTP/2 dial (`dialH2` in Android's `dial.go`, minus `VpnService.protect` which
-becomes the same `IP_BOUND_IF` binding as phase 3/4) plus the TLS ClientHello desync wrapper
-(`desync.go` — already 100% portable Go stdlib, reimplemented directly, see `ARCHITECTURE.md`
-§9.2 and §8 on why reimplemented rather than copied).
+`zarpd/warp.DialH2` (MASQUE over HTTP/2 — TCP dial via a `*net.Dialer` bound to the physical
+interface through `route.Physical.Control`, same job as `BindUDP` does for `DialH3`) and
+`zarpd/warp.NewDesyncConn`/`ParseDesync` (the TLS ClientHello split/disorder wrapper — see
+`ARCHITECTURE.md` §9.2 and §8 for why reimplemented directly rather than adapted from Android's
+`desync.go`) are both written and exercised on this Mac's real network.
+
+**A genuinely useful finding, not the result expected going in:** unlike QUIC/UDP (actively
+blocked, phase 4), this network does **not** block plain MASQUE-over-HTTP/2 at all — a direct
+`DialH2` with no desync already got `warp=on`. Consistent with Russian DPI more commonly
+fingerprinting QUIC specifically than generic TLS-over-TCP-443, which is far harder to
+distinguish from ordinary HTTPS traffic without deep SNI inspection. That makes this phase's
+evidence a different *kind* of proof than phase 4's "broken → fixed": there was nothing broken
+here for `split` mode to fix, so its success shows the mechanism works correctly (a real server
+accepted the split ClientHello, `warp=on`) without showing it was *necessary* on this particular
+network.
+
+- **`split:host,midsld`**: `warp=on`, both with the dial itself and through the full utun tunnel
+  (`cdn-cgi/trace` from the self-check). The split write path, SNI-relative position resolution,
+  and `SetNoDelay` handling are all confirmed working end to end.
+- **`disorder:host`**: **reproducibly fails**, twice, with the same signature — the initial
+  MASQUE/CONNECT-IP handshake succeeds ("MASQUE connected" is logged), but the tunnel's data plane
+  never actually works: every `cdn-cgi/trace` self-check attempt times out (curl exit 28), and the
+  pump eventually dies with `connect-ip read: read tcp ...: read: operation timed out`. Not
+  written off as flakiness — it reproduced with an identical failure mode on a clean physical
+  network both times, and `split` mode (same code, same network, different mode) works fine. Most
+  likely explanation, not yet confirmed: the deliberately-dropped, TTL=1 first TCP segment is
+  supposed to reach the destination later via the kernel's own automatic retransmission (at
+  whatever TTL is current *then*, which by design is back to normal by the time that happens) —
+  something in that recovery path isn't completing correctly on this Mac, or within the test's
+  wait budget. Properly diagnosing which needs a `tcpdump` capture of the actual segment/TTL/retransmission
+  behavior on the wire — real evidence, not another guess — which hasn't been gathered yet. Not
+  blocking phase 6 overall, since `split` mode already proves the desync mechanism family works;
+  revisit `disorder` with packet-level evidence before relying on it.
+
+Also worth remembering operationally, not just for this phase: the test Mac has an unrelated,
+pre-existing VPN client (Happ) that reconnects on its own fairly quickly once disconnected —
+every real-Mac test in phases 3-6 had to confirm (and sometimes re-confirm mid-session) that
+`route -n get default` was genuinely the physical interface, not Happ's tunnel, before the result
+meant anything.
 
 ## Phase 7 — connect the backend to the existing Swift engine and UI
 

@@ -1,8 +1,8 @@
-// tunnelpoc is Phase 3's last, highest-risk step (see docs/IMPLEMENTATION_PLAN.md): does real
-// internet traffic actually flow utun -> MASQUE -> Cloudflare -> back? It deliberately does NOT
-// touch the default route — only a single narrow host route (-target, default 1.1.1.1) — to keep
-// the blast radius small while proving the exact same packet-pumping mechanism a real default
-// route replacement would need. That's the next, separate step once this one is verified.
+// tunnelpoc is the real-Mac test harness for docs/IMPLEMENTATION_PLAN.md phases 3-6: does real
+// internet traffic actually flow utun -> MASQUE -> Cloudflare -> back, with or without a DPI
+// strategy applied first? It deliberately does NOT touch the default route — only a single
+// narrow host route (-target, default 1.1.1.1) — to keep the blast radius small while proving the
+// exact same packet-pumping mechanism a real default route replacement would need.
 //
 // Needs root (utun). Modifies routing state; -target's route is removed on exit, including
 // Ctrl-C, but if this process is killed harder than that (-9), run manually to check:
@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -24,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	usqueconfig "github.com/Diniboy1123/usque/config"
 	"golang.zx2c4.com/wireguard/tun"
 
 	"github.com/feg55/zarp-macos/zarpd/route"
@@ -34,7 +36,7 @@ import (
 // fakeStepList accumulates one -fake flag per step, format "path[:repeats[:ttl]]" — repeats
 // defaults to 6, ttl to 0 (don't change it). Repeatable so a strategy like "WARP QUIC: fake
 // google + vk" (two steps, each with its own blob) can be expressed on the command line instead
-// of needing a code change per strategy combination.
+// of needing a code change per strategy combination. QUIC/HTTP3 only — see -desync for HTTP/2.
 type fakeStepList struct {
 	specs []string
 	steps []warp.FakeStep
@@ -74,8 +76,10 @@ func main() {
 	target := flag.String("target", "1.1.1.1", "single host to route through the tunnel for this test")
 	mtu := flag.Int("mtu", 1280, "tunnel MTU (usque/MASQUE supports up to 1280)")
 	duration := flag.Duration("duration", 25*time.Second, "how long to keep the tunnel up")
+	http2 := flag.Bool("http2", false, "dial MASQUE over HTTP/2 (TCP) instead of HTTP/3 (QUIC/UDP) — the fallback transport")
+	desyncSpec := flag.String("desync", "", "HTTP/2 only: TLS ClientHello desync, e.g. \"split:host,midsld\" or \"disorder:1\" (see warp/desync.go)")
 	var fakes fakeStepList
-	flag.Var(&fakes, "fake", "repeatable: path/to/blob.bin[:repeats[:ttl]] (repeats default 6, ttl default 0=unchanged); "+
+	flag.Var(&fakes, "fake", "HTTP/3 only, repeatable: path/to/blob.bin[:repeats[:ttl]] (repeats default 6, ttl default 0=unchanged); "+
 		"e.g. two -fake flags = google then vk, matching \"WARP QUIC: fake google + vk\". None given = no strategy, direct dial.")
 	flag.Parse()
 
@@ -93,49 +97,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("TLSConfigFromAccount: %v", err)
 	}
-	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
-	if err != nil {
-		log.Fatalf("ListenUDP: %v", err)
-	}
-	if err := phys.BindUDP(udpConn); err != nil {
-		log.Fatalf("BindUDP (IP_BOUND_IF): %v — this is the routing-loop guard, not optional", err)
-	}
 
-	endpoint := &net.UDPAddr{IP: net.ParseIP(cfg.EndpointV4), Port: 443}
-	socketBefore := udpConn.LocalAddr().String()
-	strategyName := "direct (no -fake given)"
-	if len(fakes.steps) > 0 {
-		strategyName = fmt.Sprintf("fake %s", fakes.String())
+	var session *warp.Session
+	if *http2 {
+		session, err = dialH2(cfg, phys, tlsConfig, *desyncSpec)
+	} else {
+		session, err = dialH3(cfg, phys, tlsConfig, fakes)
 	}
-	fmt.Printf("UDP socket created: local=%s\n", socketBefore)
-	fmt.Printf("target=%s\n", endpoint)
-	fmt.Printf("strategy=%s\n", strategyName)
-	fmt.Printf("(bound to physical interface %s, won't be captured by the utun route below)\n\n", phys.Interface)
-
-	if len(fakes.steps) > 0 {
-		packets, sent, err := warp.SendFakes(udpConn, endpoint, fakes.steps, func(stepIndex, packetIndex, n int) {
-			step := fakes.steps[stepIndex]
-			fmt.Printf("step %d/%d (%s) fake %d/%d sent: %d bytes\n",
-				stepIndex+1, len(fakes.steps), fakes.specs[stepIndex], packetIndex+1, step.Repeats, n)
-		})
-		if err != nil {
-			log.Fatalf("SendFakes: %v (sent %d packets, %d bytes before failing)", err, packets, sent)
-		}
-		fmt.Printf("(%d fake packet(s) sent across %d step(s), %d bytes total)\n\n", packets, len(fakes.steps), sent)
-	}
-
-	socketNow := udpConn.LocalAddr().String()
-	fmt.Println("--- handing THE SAME UDP socket to quic-go ---")
-	fmt.Printf("local socket before QUIC=%s\n", socketNow)
-	if socketNow != socketBefore {
-		// Would mean udpConn got replaced somewhere above instead of reused — it didn't (this
-		// function only ever holds the one *net.UDPConn from ListenUDP), but assert it rather
-		// than just assert it in a doc comment: the whole strategy is worthless if this ever
-		// stops being true.
-		log.Fatalf("BUG: socket address changed (%s -> %s) — fakes and the real Initial would NOT share a 5-tuple", socketBefore, socketNow)
-	}
-	fmt.Println("--- real QUIC handshake beginning ---")
-	session, err := warp.DialH3(context.Background(), udpConn, endpoint, tlsConfig, 30*time.Second, 15*time.Second)
 	if err != nil {
 		log.Fatalf("MASQUE connected / failed: %v", err)
 	}
@@ -171,17 +139,23 @@ func main() {
 	go func() { pumpErr <- pump.Run() }()
 
 	fmt.Printf("pumping packets for up to %s\n", *duration)
-	fmt.Println("--- self-check: curl --max-time 5 https://" + *target + "/cdn-cgi/trace ---")
-	time.Sleep(500 * time.Millisecond) // let the pump goroutines actually start reading/writing first
-	if out, err := exec.Command("curl", "-s", "--max-time", "5", "https://"+*target+"/cdn-cgi/trace").CombinedOutput(); err != nil {
-		fmt.Printf("self-check curl failed: %v\n%s\nwarp=off (curl itself failed)\n", err, out)
-	} else {
-		verdict := "warp=off"
-		if strings.Contains(string(out), "warp=on") {
-			verdict = "warp=on"
+	fmt.Println("--- self-check: curl --max-time 5 https://" + *target + "/cdn-cgi/trace (up to 4 attempts, 1s apart) ---")
+	verdict := "warp=off"
+	for attempt := 1; attempt <= 4; attempt++ {
+		time.Sleep(time.Second) // let the pump goroutines actually start reading/writing first, and give retransmits (e.g. disorder mode) room
+		out, err := exec.Command("curl", "-s", "--max-time", "5", "https://"+*target+"/cdn-cgi/trace").CombinedOutput()
+		if err != nil {
+			fmt.Printf("attempt %d/4: curl failed: %v\n", attempt, err)
+			continue
 		}
-		fmt.Printf("%s\n%s\n", indent(string(out)), verdict)
+		if strings.Contains(string(out), "warp=on") {
+			fmt.Printf("attempt %d/4:\n%s\n", attempt, indent(string(out)))
+			verdict = "warp=on"
+			break
+		}
+		fmt.Printf("attempt %d/4: reached the server but no warp=on:\n%s\n", attempt, indent(string(out)))
 	}
+	fmt.Println(verdict)
 	fmt.Println("(feel free to also try `ping " + *target + "` yourself in another terminal)")
 
 	sigs := make(chan os.Signal, 1)
@@ -196,6 +170,80 @@ func main() {
 		fmt.Printf("pump stopped on its own: %v\n", err)
 	}
 	fmt.Println("shutting down (route, tunnel, session all torn down by deferred cleanup)")
+}
+
+// dialH3 is phases 3-5's path: QUIC/UDP, optionally with fake packets sent on the exact socket
+// the real Initial reuses.
+func dialH3(cfg *usqueconfig.Config, phys *route.Physical, tlsConfig *tls.Config, fakes fakeStepList) (*warp.Session, error) {
+	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
+	if err != nil {
+		return nil, fmt.Errorf("ListenUDP: %w", err)
+	}
+	if err := phys.BindUDP(udpConn); err != nil {
+		return nil, fmt.Errorf("BindUDP (IP_BOUND_IF): %w — this is the routing-loop guard, not optional", err)
+	}
+
+	endpoint := &net.UDPAddr{IP: net.ParseIP(cfg.EndpointV4), Port: 443}
+	socketBefore := udpConn.LocalAddr().String()
+	strategyName := "direct (no -fake given)"
+	if len(fakes.steps) > 0 {
+		strategyName = fmt.Sprintf("fake %s", fakes.String())
+	}
+	fmt.Printf("UDP socket created: local=%s\n", socketBefore)
+	fmt.Printf("target=%s\n", endpoint)
+	fmt.Printf("strategy=%s\n", strategyName)
+	fmt.Printf("(bound to physical interface %s, won't be captured by the utun route below)\n\n", phys.Interface)
+
+	if len(fakes.steps) > 0 {
+		packets, sent, err := warp.SendFakes(udpConn, endpoint, fakes.steps, func(stepIndex, packetIndex, n int) {
+			step := fakes.steps[stepIndex]
+			fmt.Printf("step %d/%d (%s) fake %d/%d sent: %d bytes\n",
+				stepIndex+1, len(fakes.steps), fakes.specs[stepIndex], packetIndex+1, step.Repeats, n)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("SendFakes: %w (sent %d packets, %d bytes before failing)", err, packets, sent)
+		}
+		fmt.Printf("(%d fake packet(s) sent across %d step(s), %d bytes total)\n\n", packets, len(fakes.steps), sent)
+	}
+
+	socketNow := udpConn.LocalAddr().String()
+	fmt.Println("--- handing THE SAME UDP socket to quic-go ---")
+	fmt.Printf("local socket before QUIC=%s\n", socketNow)
+	if socketNow != socketBefore {
+		return nil, fmt.Errorf("BUG: socket address changed (%s -> %s) — fakes and the real Initial would NOT share a 5-tuple", socketBefore, socketNow)
+	}
+	fmt.Println("--- real QUIC handshake beginning ---")
+	return warp.DialH3(context.Background(), udpConn, endpoint, tlsConfig, 30*time.Second, 15*time.Second)
+}
+
+// dialH2 is phase 6's path: TCP/TLS, optionally with the ClientHello split/disordered.
+func dialH2(cfg *usqueconfig.Config, phys *route.Physical, tlsConfig *tls.Config, desyncSpecStr string) (*warp.Session, error) {
+	v4 := cfg.EndpointH2V4
+	if v4 == "" {
+		v4 = "162.159.198.2" // usqueconfig.DefaultEndpointH2V4, avoiding an import just for the fallback
+	}
+	endpoint := &net.TCPAddr{IP: net.ParseIP(v4), Port: 443}
+
+	var desync *warp.DesyncSpec
+	if desyncSpecStr != "" {
+		var err error
+		desync, err = warp.ParseDesync(desyncSpecStr)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	fmt.Printf("target=%s (HTTP/2)\n", endpoint)
+	strategyName := "direct (no -desync given)"
+	if desync != nil {
+		strategyName = "desync " + desyncSpecStr
+	}
+	fmt.Printf("strategy=%s\n", strategyName)
+	fmt.Printf("(dialer bound to physical interface %s, won't be captured by the utun route below)\n\n", phys.Interface)
+
+	dialer := &net.Dialer{Control: phys.Control}
+	fmt.Println("--- TCP + TLS handshake beginning ---")
+	return warp.DialH2(context.Background(), dialer, endpoint, tlsConfig, desync, 15*time.Second)
 }
 
 func configureAddress(name, local string) error {
