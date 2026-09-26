@@ -95,7 +95,7 @@ final class LocalizationTests: XCTestCase {
                 // Known, documented gap for the 4 new en.txt-only keys until translators catch up
                 // (see the header note in Resources/Lang/en.txt) — anything beyond that is new
                 // and should be investigated.
-                let expectedGap: Set<String> = ["strategy.directH2", "strategy.badSyntax", "strategy.unknownFeature", "strategy.badsum", "mac.notImplemented"]
+                let expectedGap: Set<String> = ["strategy.directH2", "strategy.badSyntax", "strategy.unknownFeature", "strategy.badsum"]
                 XCTAssertEqual(missing, expectedGap, "\(language.code).txt is missing unexpected keys: \(missing.subtracting(expectedGap).sorted())")
             }
         }

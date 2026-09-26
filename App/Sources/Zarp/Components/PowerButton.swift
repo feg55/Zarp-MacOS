@@ -87,6 +87,11 @@ struct PowerButton: View {
         .onAppear { startSpinIfNeeded() }
         .onChange(of: isBusy) { _, _ in startSpinIfNeeded() } // macOS 14+ two-param onChange
         .accessibilityAddTraits(.isButton)
+        // The DragGesture above only responds to real pointer events, so VoiceOver's "activate"
+        // and any AXPress-based automation (Accessibility Inspector, UI tests) would otherwise
+        // silently do nothing despite `.isButton` making this look activatable — this is what
+        // actually wires that up, same as a plain `Button` gets for free.
+        .accessibilityAction(.default) { action() }
     }
 
     private var isBusy: Bool { if case .busy = look { return true }; return false }
