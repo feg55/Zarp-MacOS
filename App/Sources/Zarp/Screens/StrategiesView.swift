@@ -19,9 +19,8 @@ private struct StrategyRow: Identifiable {
 /// `SettingsForm` (`UI/SettingsForm.cs`'s column setup and `FillList`) and the attached screenshot
 /// of that window — same column order and widths, same ✔ / ✔✔ convention, same row density.
 ///
-/// UNVERIFIED: not rendered on a real display (see `Theme.swift`'s note). While the real
-/// networking layer doesn't exist (`mac.notImplemented`), every row reads "not tested" — that is
-/// the honest state, not a placeholder bug.
+/// Backed by real networking as of `zarpd`/`ZarpdClient` (docs/ARCHITECTURE.md §9.4) — rows read
+/// "not tested" only until a real Test/Use/scan runs, not as a permanent placeholder state.
 struct StrategiesView: View {
     @ObservedObject var vm: AppViewModel
     @State private var selection = Set<String>()

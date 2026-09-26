@@ -98,16 +98,6 @@ struct SettingsView: View {
 
                 Spacer(minLength: 0)
             }
-
-            if vm.isReady {
-                Text(vm.localization.string("mac.notImplemented"))
-                    .font(Theme.font(11))
-                    .foregroundColor(Theme.bad)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Theme.panel))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.bad.opacity(0.4), lineWidth: 1))
-            }
         }
         .padding(.horizontal, 20)
     }

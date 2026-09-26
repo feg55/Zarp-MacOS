@@ -199,19 +199,59 @@ every real-Mac test in phases 3-6 had to confirm (and sometimes re-confirm mid-s
 `route -n get default` was genuinely the physical interface, not Happ's tunnel, before the result
 meant anything.
 
-## Phase 7 — connect the backend to the existing Swift engine and UI
+## Phase 7 — connect the backend to the existing Swift engine and UI — DONE (2026-09-26)
 
-- `ZarpdClient`: a `WarpConnectionProvider` + `WarpProbe` implementation (`EngineProtocols.swift`)
-  that talks to `zarpd` over IPC (shape TBD, `ARCHITECTURE.md` §9.4) instead of throwing
-  `Unimplemented*` errors.
-- `NetworkInspector` real implementation — narrower scope now than the old design assumed, since
-  Zarp owns the tunnel outright rather than needing to detect interference from other VPN adapters
-  the way a packet filter sitting beside the official WARP client would have.
-- `ZarpEngine`'s Connect/Quick Scan/Full Scan/self-healing logic is unchanged — it was written
-  against the `WarpConnectionProvider`/`WarpProbe` protocols, not against any concrete backend, so
-  this phase is wiring, not re-architecture.
+- `ZarpdClient` (`App/Sources/Zarp/ZarpdClient.swift`): a `WarpConnectionProvider` + `WarpProbe`
+  implementation (`EngineProtocols.swift`) that talks to `zarpd` over the newline-delimited-JSON
+  Unix socket IPC (`zarpd/ipc`, `ARCHITECTURE.md` §9.4), replacing `Unimplemented*`. `AppViewModel`
+  now defaults `connections`/`probe` to it instead of the unimplemented placeholders.
+- `ZarpEngine`'s Connect/Quick Scan/Full Scan/self-healing logic needed zero changes — it was
+  written against the `WarpConnectionProvider`/`WarpProbe` protocols, not any concrete backend, so
+  this phase really was wiring, not re-architecture.
+- `NetworkInspector` real implementation (`getifaddrs`) is still `UnimplementedNetworkInspector` —
+  out of scope for this phase (not on the Connect/Scan critical path) and not built yet.
 
-Verified by: real Connect/Scan flows in the actual running app, screenshots, not just "should work."
+**Verified with a real, driven GUI end-to-end test — not just "should work":** the built
+`Zarp.app` was launched for real and driven via Accessibility automation (`System Events`) with a
+real root `zarpd` already listening, while a second, independent verification channel (`curl
+https://1.1.1.1/cdn-cgi/trace`, `netstat -rn`, `ifconfig`) confirmed actual OS network state
+outside the app entirely, and zarpd's own terminal log served as a third, independent witness:
+
+1. Settings opened, "WARP QUIC: fake google ×6" row selected, "Использовать" clicked → app showed
+   a live "⏳ Подключение..." progress state, then **"Подключено" / "Стратегия: WARP QUIC: fake
+   google ×6"**. Independently: `curl .../cdn-cgi/trace` → `warp=on`, a genuine Cloudflare WARP
+   egress IP, `netstat` showed a real `1.1.1.1 → utun8` host route, `ifconfig utun8` showed a real
+   WARP-assigned `172.16.0.2`. zarpd's log: `open #2 transport=masqueH3 connectMs=203 dev=utun8
+   persistent=true`.
+2. Power button clicked → app showed **"Отключено"** and the disconnected hint text.
+   Independently: `curl` fell back to the ordinary non-WARP egress IP (`warp=off`), the `utun8`
+   route was gone from `netstat`. zarpd's log: `zarpd: closed #2 (utun8)` with a clean
+   `H3_NO_ERROR (local)` stream close, logged at the same moment as the click.
+
+This exercised the complete real chain for the first time: SwiftUI → `AppViewModel` →
+`ZarpEngine` → `ZarpdClient` → Unix socket IPC → root `zarpd` → real MASQUE/HTTP3 dial with the
+QUIC "fake google ×6" desync that phase 4 already proved defeats this network's real DPI → real
+utun + narrow route → real packet pump, and the same in reverse for a clean disconnect.
+
+**Two real bugs found by actually running this, both fixed, not worked around:**
+
+- `SettingsView` unconditionally showed a red "The macOS networking layer isn't built yet" banner
+  (`vm.isReady` has been `true` since phase 1) — stale copy from before `zarpd` existed, left in
+  place through phases 2-6 because nothing exercised the Settings screen against a real backend
+  until now. Removed the banner, its `mac.notImplemented` localization key (only ever in `en.txt`),
+  and the now-false "networking layer doesn't exist" claims in `StrategiesView`'s and
+  `MainWindowView`'s doc comments.
+- `PowerButton` (`App/Sources/Zarp/Components/PowerButton.swift`) is a custom `Canvas` control
+  wired up with a `DragGesture`, not a real SwiftUI `Button`, with only `.accessibilityAddTraits(
+  .isButton)` — which makes Accessibility clients *describe* it as a button but does not wire up
+  an actual activation handler. A synthetic AXPress (exactly what VoiceOver's "activate" gesture
+  sends, and what this session's own UI automation sent) was silently a no-op: the first
+  disconnect attempt produced no state change anywhere (UI, `curl`, `netstat`, or zarpd's log all
+  stayed on "connected") even though System Events reported the click as delivered successfully.
+  Fixed with `.accessibilityAction(.default) { action() }` alongside the existing trait, then
+  re-verified — the second disconnect attempt worked and is the one evidenced above. Checked for
+  the same pattern elsewhere (`grep` for `DragGesture`/`TapGesture`/`accessibilityAddTraits` across
+  `Components/`/`Screens/`) — `PowerButton` was the only offender.
 
 ## Phase 8 — install/manage `zarpd` cleanly
 
