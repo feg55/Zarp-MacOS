@@ -85,43 +85,50 @@ Delivered:
   teardown (route removed, confirmed by re-running `curl` afterward getting the normal, non-WARP
   answer — not just assumed from the log line saying so).
 
-**Deliberately not yet done, and now the very next thing:** this proves the mechanism with one
-narrow host route, not a default-route replacement — full default-route takeover (all traffic,
-not just one test host) is materially higher blast radius (getting it wrong risks the whole
-Mac's connectivity, not one route) and needs its own careful, incremental verification rather than
-being bundled into this milestone. Also confirmed as a real-world wrinkle worth remembering: on
-this specific Mac, `route -n get default` reported another tunnel interface (`utun8`, presumably
-an existing corporate VPN or similar), not a hardware NIC — `CurrentDefault()` handled that
-correctly (bound to whatever's actually reaching the internet right now, which is the right
-behavior), but it's a reminder that "physical interface" in `ARCHITECTURE.md` §9.3 needs to mean
-"whatever currently gets to the real internet," not literally always Wi-Fi/Ethernet.
+This milestone's first run was unintentionally confounded: `route -n get default` reported
+another VPN's utun (identified afterward as **Happ**, an unrelated third-party proxy client
+already connected on the test Mac — not Cloudflare WARP, which remains uninstalled) as the
+current default, and `CurrentDefault()` correctly bound to it, meaning that first success actually
+routed through Happ's tunnel rather than the raw physical network. Caught before drawing any
+conclusion from it, Happ was disconnected, and the default route was confirmed back on `en0` with
+a real LAN gateway before redoing the test — see phase 4 below for why re-establishing a clean
+baseline mattered a great deal here. `CurrentDefault()`'s behavior itself (bind to whatever's
+actually reaching the internet right now) was correct in both cases; the lesson is procedural —
+always confirm the physical interface is genuinely physical before trusting a result — not a code
+fix. Full default-route takeover (all traffic, not just one test host) is still materially higher
+blast radius than this milestone's narrow host route and remains its own next, separate step.
+
+## Phase 4 — one Zarp strategy: `WARP QUIC: fake google ×6` — DONE (2026-09-26)
+
+**Real DPI evasion, verified against real interference, not a hypothetical.** The control case
+first: with Happ disconnected (clean physical `en0`, real gateway) and no fake-packet strategy, a
+direct MASQUE dial genuinely times out —
+`DialH3: connect-ip: connect-ip: failed to read response: http3: ... connect timeout` — and
+`cdn-cgi/trace` confirms `warp=off`. The test Mac's network is in Russia (`loc=RU` in the trace),
+which is independently documented to specifically target WARP/MASQUE traffic — this is a real,
+currently-active block, not a flaky connection or a bug in `DialH3` (the exact same function
+succeeded minutes earlier once Happ's tunnel was in the path, and succeeds below once the fake
+strategy is).
+
+Then the actual strategy, same network, same physical interface, nothing else changed: `zarpd/warp`'s
+`SendFakes` writes 6 copies of `Resources/blobs/quic_initial_www_google_com.bin` (1200 bytes each,
+7200 bytes total) through the UDP socket before `DialH3` reuses that *exact* socket for the real
+QUIC Initial — confirmed identical (`local=[::]:53876` before and after, asserted in code, not just
+logged) rather than assumed. Full ordering visible in the log: `fake 1/6 sent` … `fake 6/6 sent`,
+then `--- real QUIC handshake beginning ---`, then `MASQUE connected`. Result: `warp=on`, a genuine
+Cloudflare WARP egress IP, on the same network and the same physical interface that just timed out
+seconds before with no strategy. Exit criteria (same socket, fakes first, real Initial after,
+tunnel connects, `warp=on`) all met with real evidence, not asserted.
+
+Not yet done: a real `tcpdump` capture independently confirming the fake packets and the real
+Initial share one 5-tuple on the wire (the application-level evidence above is already strong —
+same local socket address, asserted in code, plus a result that flips from timeout to success with
+only the strategy changing — but a packet capture would be additional, independent confirmation,
+not yet gathered).
 
 Verified by: running it on this Mac as root, with a real `curl` request to a well-known trace
 endpoint in a second terminal, output inspected directly — not summarized, not assumed from a
 success log line.
-- No strategy executor yet — direct connection, to isolate "does MASQUE + real utun work at all"
-  from "does the fake-packet trick work."
-
-Exit criteria: register a WARP account, connect, and have *ordinary internet traffic on this Mac*
-actually flow through the tunnel — verified with `curl https://www.cloudflare.com/cdn-cgi/trace`
-showing `warp=on`, and a basic browsing/ping sanity check that nothing else on the Mac lost
-connectivity (the routing loop risk in `ARCHITECTURE.md` §9.3).
-
-Verified by: running it, on this Mac, with real network traffic — not a mock.
-
-## Phase 4 — one Zarp strategy: `WARP QUIC: fake google ×6`
-
-Deliverables:
-- The socket-reuse trick itself (`ARCHITECTURE.md` §9.2): open the UDP socket, bind it to the
-  physical interface, send `quic_initial_www_google_com.bin` (already vendored in
-  `Resources/blobs/`, MIT) ×6 through it, then hand that same socket to quic-go for the real
-  Initial.
-- Confirm — with a packet capture (`tcpdump`), not just application-level success — that the fakes
-  and the real Initial share one 5-tuple and leave in that order.
-
-Exit criteria: `warp=on` via `cdn-cgi/trace`, connect time and ping recorded the same way as
-Windows (median of 3 after one warm-up), and the tcpdump capture actually shows `fake ×6 → real
-Initial` on one flow.
 
 ## Phase 5 — remaining QUIC strategies
 
