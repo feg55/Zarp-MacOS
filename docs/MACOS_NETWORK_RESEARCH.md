@@ -1,9 +1,19 @@
 # macOS network research: can Zarp work beside the official WARP client?
 
-Status: research done, **proof of concept written but not yet run on a Mac**.
-Everything under "Confirmed" has a source. Everything under "Open questions"
-must be settled by the PoC (`PoC/`, see [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md))
-before the full app is built.
+> **SUPERSEDED 2026-09-26.** This whole document researches the "intercept the official WARP
+> client's traffic" architecture. That approach is **rejected**, not merely paused: see
+> [ARCHITECTURE.md](ARCHITECTURE.md) §10 for why, and §9 for the research that replaces it (Zarp
+> owns the WARP connection itself, modeled on Zarp-Android's `zarpcore`). The findings below are
+> kept as a historical record — several of them (the NEFilterPacketProvider API shape, the free
+> Personal Team account-tier gating, `IP_BOUND_IF`) turned out to still matter for the new
+> architecture and are cross-referenced from there. Nothing below should be treated as describing
+> current or planned behavior; `docs/IMPLEMENTATION_PLAN.md` no longer follows this document's
+> phase 1.
+
+Status: research done, PoC (`PoC/Filter`) wired far enough to get a definitive answer (see
+[ARCHITECTURE.md](ARCHITECTURE.md) §10) — then the whole architecture was rejected before finishing
+it. Everything under "Confirmed" has a source. Everything under "Open questions" was meant to be
+settled by the PoC before the full app was built on this design; most no longer will be.
 
 ## 1. Short answer
 
