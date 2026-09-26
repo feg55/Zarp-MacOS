@@ -122,10 +122,6 @@ strategy.badSyntax = {0}
 strategy.unknownFeature = needs more than a fake packet or a plain TCP split ({0}) — not available on macOS yet
 strategy.badsum = needs raw-socket checksum tampering — not available on macOS yet
 
-# ---- macOS build status (shown while the real networking layer doesn't exist yet — see
-# docs/IMPLEMENTATION_PLAN.md)
-mac.notImplemented = The macOS networking layer isn't built yet. Scans and connections can't run until it is — see docs/IMPLEMENTATION_PLAN.md.
-
 # ---- status line under the button
 detail.disconnecting = Disconnecting...
 detail.disconnected = Disconnected

@@ -6,9 +6,9 @@ import ZarpCore
 /// collapsible log — matches Windows Zarp's `MainForm` (`UI/MainForm.cs`), same 380pt compact
 /// width and the same element order top to bottom.
 ///
-/// UNVERIFIED: not rendered on a real display (see `Theme.swift`'s note). Pressing the power
-/// button will visibly fail (`mac.notImplemented`) until a real `WarpConnectionProvider` exists —
-/// see `AppViewModel`'s doc comment.
+/// Pressing the power button drives a real `WarpConnectionProvider` (`ZarpdClient`, talking to
+/// `zarpd` over IPC — see `AppViewModel`'s doc comment); it fails visibly and honestly if `zarpd`
+/// isn't running, rather than silently no-opping.
 struct MainWindowView: View {
     @ObservedObject var vm: AppViewModel
     @State private var showingSettings = false
