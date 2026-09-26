@@ -340,8 +340,12 @@ func dialErrToConnError(err error, timeout time.Duration) error {
 }
 
 func (s *server) dialH3(ctx context.Context, phys *route.Physical, cfg *usqueconfig.Config, tlsConfig *tls.Config, p ipc.OpenParams, timeout time.Duration) (*warp.Session, error) {
+	// p.Endpoint is ZarpEngine's opaque per-test uniqueness token when "isolate tests" is on
+	// (e.g. "isolated-3"), not necessarily a real address — see ZarpEngine.nextEndpoint's doc
+	// comment. Only honor it as an override when it actually parses as an IP; otherwise fall back
+	// to the account's real endpoint rather than dialing a garbage net.UDPAddr{IP: nil}.
 	endpointIP := cfg.EndpointV4
-	if p.Endpoint != "" {
+	if p.Endpoint != "" && net.ParseIP(p.Endpoint) != nil {
 		endpointIP = p.Endpoint
 	}
 	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
@@ -366,8 +370,9 @@ func (s *server) dialH3(ctx context.Context, phys *route.Physical, cfg *usquecon
 }
 
 func (s *server) dialH2(ctx context.Context, phys *route.Physical, cfg *usqueconfig.Config, tlsConfig *tls.Config, p ipc.OpenParams, timeout time.Duration) (*warp.Session, error) {
+	// Same "isolated-N" caveat as dialH3 above.
 	v4 := cfg.EndpointH2V4
-	if p.Endpoint != "" {
+	if p.Endpoint != "" && net.ParseIP(p.Endpoint) != nil {
 		v4 = p.Endpoint
 	}
 	endpoint := &net.TCPAddr{IP: net.ParseIP(v4), Port: 443}

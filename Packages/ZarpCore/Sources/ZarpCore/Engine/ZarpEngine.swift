@@ -79,8 +79,18 @@ public actor ZarpEngine {
     public var quickStopAfter: Int { max(1, settings.stopAfterWorking) }
     public var currentSettings: AppSettings { settings }
 
+    /// `new` comes from the UI's own `AppSettings` snapshot, which only ever changes user
+    /// preference fields (`AppViewModel.settings` is captured at launch and updated locally by
+    /// toggle/picker bindings, not refreshed from the engine on every scan result) — so
+    /// `results`/`selectedStrategyId` here are preserved from the engine's own live state rather
+    /// than accepted from `new`. Otherwise any Settings-screen toggle after a scan silently rolls
+    /// discovered/verified strategy state back to whatever it was when the UI last saw it, even
+    /// though nothing scan- or connection-related was actually being changed.
     public func updateSettings(_ new: AppSettings) {
-        settings = new
+        var merged = new
+        merged.results = settings.results
+        merged.selectedStrategyId = settings.selectedStrategyId
+        settings = merged
         settingsStore.save(settings)
     }
 

@@ -161,6 +161,43 @@ final class ZarpEngineTests: XCTestCase {
         XCTAssertEqual(provider.openedIds, ["warp-q-google6", "warp-q-vk6"])
     }
 
+    func testUpdateSettingsDoesNotClobberResultsOrSelectedStrategy() async {
+        // AppViewModel's `settings` is a snapshot the UI captures at launch and mutates locally —
+        // it is never refreshed from the engine as scans discover new results (see
+        // AppViewModel.refresh(), which updates `results`/`selectedStrategyId` directly from the
+        // engine but never touches `settings`). A Settings-screen toggle firing after a scan
+        // therefore calls `updateSettings` with a whole `AppSettings` struct whose embedded
+        // `results`/`selectedStrategyId` can be stale relative to what the engine has since
+        // discovered — that must not roll the engine's live state backwards.
+        let provider = ScriptedConnectionProvider([
+            "warp-q-google6": [.ok(connectMs: 120), .ok(connectMs: 130), .ok(connectMs: 110)],
+        ])
+        let engine = makeEngine(connections: provider)
+        await engine.load()
+
+        let started = await engine.search(full: false)
+        XCTAssertTrue(started)
+        await engine.waitUntilIdle()
+
+        let resultsAfterScan = await engine.results
+        let selectedAfterScan = await engine.selectedStrategyId
+        XCTAssertEqual(selectedAfterScan, "warp-q-google6")
+        XCTAssertFalse(resultsAfterScan.isEmpty)
+
+        // A stale snapshot from before the scan ran, with one real preference change on it —
+        // exactly what a toggle flip on an out-of-date `AppViewModel.settings` would send.
+        var stale = AppSettings()
+        stale.isolateTests = false
+        await engine.updateSettings(stale)
+
+        let resultsAfterUpdate = await engine.results
+        let selectedAfterUpdate = await engine.selectedStrategyId
+        let settingsAfterUpdate = await engine.currentSettings
+        XCTAssertEqual(resultsAfterUpdate, resultsAfterScan, "a preference-only settings update must not erase scan results")
+        XCTAssertEqual(selectedAfterUpdate, selectedAfterScan, "a preference-only settings update must not erase the selected strategy")
+        XCTAssertEqual(settingsAfterUpdate.isolateTests, false, "the actual preference change must still take effect")
+    }
+
     func testSecondCallWhileBusyIsRefused() async {
         let provider = ScriptedConnectionProvider([:]) // everything fails instantly, doesn't matter here
         let engine = makeEngine(connections: provider)
