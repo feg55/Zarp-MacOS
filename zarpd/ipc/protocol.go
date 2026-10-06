@@ -48,19 +48,42 @@ type RestartResult struct {
 	Acknowledged bool `json:"acknowledged"`
 }
 
+// --- status ---
+
+// StatusResult answers "what is zarpd's current live connection, if any" — read-only, no side
+// effects, safe to call as often as needed. Only ever reports the one *persistent* connection
+// (test/scan connections are deliberately short-lived and never worth a GUI adopting), matching
+// ZarpEngine's own "one operation at a time" invariant. `Connected: false` with everything else
+// empty means genuinely idle, not unreachable — an unreachable daemon fails the IPC call itself
+// (same as every other method), it doesn't return a hollow StatusResult.
+type StatusResult struct {
+	DaemonRunning    bool   `json:"daemonRunning"`
+	Connected        bool   `json:"connected"`
+	ConnectionID     string `json:"connectionId,omitempty"`
+	StrategyID       string `json:"strategyId,omitempty"`
+	Endpoint         string `json:"endpoint,omitempty"`
+	Transport        string `json:"transport,omitempty"`
+	ConnectMs        int    `json:"connectMs,omitempty"`
+	ConnectStartedAt string `json:"connectStartedAt,omitempty"` // RFC3339
+	UtunName         string `json:"utunName,omitempty"`
+}
+
 // --- open ---
 
 // OpenParams mirrors WarpConnectionProvider.open(strategy:endpoint:timeoutMs:persistent:) —
 // Strategy is flattened to exactly what zarpd needs to execute it (StrategyArgsParser.parse's
-// output, DesyncPlan, plus the transport), not the whole Swift Strategy struct (id/name/args are
-// the app's concern, not the daemon's).
+// output, DesyncPlan, plus the transport), not the whole Swift Strategy struct — except StrategyID,
+// carried through as an opaque label purely so a later "status" call can report back which saved
+// strategy a persistent connection belongs to (ARCHITECTURE.md's GUI/daemon reconciliation notes);
+// zarpd never interprets it.
 type OpenParams struct {
-	Transport  string      `json:"transport"` // "masqueH3" | "masqueH2" | "wireGuard"
-	FakeSteps  []FakeStep  `json:"fakeSteps,omitempty"`
-	TCPDesync  *TCPDesync  `json:"tcpDesync,omitempty"`
-	Endpoint   string      `json:"endpoint,omitempty"` // pin a specific WARP endpoint; "" = let zarpd choose
-	TimeoutMs  int         `json:"timeoutMs"`
-	Persistent bool        `json:"persistent"`
+	Transport  string     `json:"transport"` // "masqueH3" | "masqueH2" | "wireGuard"
+	StrategyID string     `json:"strategyId,omitempty"`
+	FakeSteps  []FakeStep `json:"fakeSteps,omitempty"`
+	TCPDesync  *TCPDesync `json:"tcpDesync,omitempty"`
+	Endpoint   string     `json:"endpoint,omitempty"` // pin a specific WARP endpoint; "" = let zarpd choose
+	TimeoutMs  int        `json:"timeoutMs"`
+	Persistent bool       `json:"persistent"`
 }
 
 // FakeStep mirrors ZarpCore's FakeStep (DesyncPlan.swift) exactly, field for field — Blob is the

@@ -74,6 +74,10 @@ type liveConn struct {
 	handle  bool // false once Close has already torn this down
 	connectMs int
 	endpoint  string
+	strategyID string
+	transport  string
+	persistent bool
+	startedAt  time.Time
 }
 
 func main() {
@@ -162,6 +166,8 @@ func (s *server) handle(ctx context.Context, method string, params json.RawMessa
 		return ipc.PingResult{Version: daemonVersion, Pid: os.Getpid()}, nil
 	case "restart":
 		return s.handleRestart()
+	case "status":
+		return s.handleStatus(), nil
 	case "open":
 		return s.handleOpen(ctx, params)
 	case "close":
@@ -201,6 +207,32 @@ func (s *server) handleRestart() (any, error) {
 		os.Exit(1)
 	}()
 	return ipc.RestartResult{Acknowledged: true}, nil
+}
+
+// handleStatus reports the one persistent connection currently live, if any — how a fresh
+// ZarpEngine (a relaunched GUI, most concretely) tells "the daemon still has a real tunnel up"
+// apart from "genuinely disconnected" instead of assuming the latter just because it doesn't
+// itself remember opening anything.
+func (s *server) handleStatus() ipc.StatusResult {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, c := range s.conns {
+		if !c.handle || !c.persistent {
+			continue
+		}
+		return ipc.StatusResult{
+			DaemonRunning:    true,
+			Connected:        true,
+			ConnectionID:     id,
+			StrategyID:       c.strategyID,
+			Endpoint:         c.endpoint,
+			Transport:        c.transport,
+			ConnectMs:        c.connectMs,
+			ConnectStartedAt: c.startedAt.UTC().Format(time.RFC3339),
+			UtunName:         c.name,
+		}
+	}
+	return ipc.StatusResult{DaemonRunning: true, Connected: false}
 }
 
 func (s *server) handleOpen(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -267,7 +299,10 @@ func (s *server) handleOpen(ctx context.Context, raw json.RawMessage) (any, erro
 	s.mu.Lock()
 	s.nextID++
 	id := strconv.FormatUint(s.nextID, 10)
-	s.conns[id] = &liveConn{session: session, dev: dev, name: name, handle: true, connectMs: connectMs, endpoint: p.Endpoint}
+	s.conns[id] = &liveConn{
+		session: session, dev: dev, name: name, handle: true, connectMs: connectMs, endpoint: p.Endpoint,
+		strategyID: p.StrategyID, transport: p.Transport, persistent: p.Persistent, startedAt: start,
+	}
 	s.mu.Unlock()
 
 	log.Printf("zarpd: open #%s transport=%s connectMs=%d dev=%s persistent=%v", id, p.Transport, connectMs, name, p.Persistent)

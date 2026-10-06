@@ -27,6 +27,7 @@ final class ZarpdClient: WarpConnectionProvider, WarpProbe, @unchecked Sendable 
         let plan = strategy.plan
         let params = OpenParams(
             transport: strategy.transport.wireName,
+            strategyId: strategy.id,
             fakeSteps: plan.fakeSteps.map(FakeStepWire.init),
             tcpDesync: plan.tcpDesync.map(TCPDesyncWire.init),
             endpoint: endpoint ?? "",
@@ -35,6 +36,19 @@ final class ZarpdClient: WarpConnectionProvider, WarpProbe, @unchecked Sendable 
         )
         let result: OpenResult = try await call("open", params)
         return ZarpdConnectionHandle(client: self, connectionID: result.connectionId, connectMs: result.connectMs, endpoint: result.endpoint)
+    }
+
+    /// See `WarpConnectionProvider.currentConnection()`'s doc comment — reconciles `ZarpEngine`
+    /// with a tunnel zarpd already has open that this particular `ZarpdClient`/engine instance
+    /// didn't itself start (most concretely: the GUI crashed or was quit and relaunched, zarpd
+    /// wasn't touched at all).
+    func currentConnection() async throws -> LiveConnectionStatus? {
+        let result: StatusResult = try await call("status", EmptyParams())
+        guard result.connected, let connectionId = result.connectionId else { return nil }
+        let handle = ZarpdConnectionHandle(
+            client: self, connectionID: connectionId, connectMs: result.connectMs ?? 0, endpoint: result.endpoint
+        )
+        return LiveConnectionStatus(handle: handle, strategyId: result.strategyId)
     }
 
     fileprivate func close(connectionID: String) async {
@@ -223,6 +237,7 @@ struct RestartResult: Decodable {
 
 private struct OpenParams: Encodable {
     let transport: String
+    let strategyId: String
     let fakeSteps: [FakeStepWire]
     let tcpDesync: TCPDesyncWire?
     let endpoint: String
@@ -258,6 +273,19 @@ private struct OpenResult: Decodable {
     let connectionId: String
     let connectMs: Int
     let endpoint: String?
+}
+
+/// Mirrors zarpd/ipc/protocol.go's StatusResult.
+private struct StatusResult: Decodable {
+    let daemonRunning: Bool
+    let connected: Bool
+    let connectionId: String?
+    let strategyId: String?
+    let endpoint: String?
+    let transport: String?
+    let connectMs: Int?
+    let connectStartedAt: String?
+    let utunName: String?
 }
 
 private struct MeasureResult: Decodable {

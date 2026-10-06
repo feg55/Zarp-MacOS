@@ -53,6 +53,10 @@ private final class ScriptedConnectionProvider: WarpConnectionProvider, @uncheck
     /// If set, the first `open(strategy:)` call whose id matches waits on this gate before
     /// returning — lets a test hold a scan "in progress" to exercise `cancel()`.
     var gateForId: (id: String, gate: OneShotGate)?
+    /// What `currentConnection()` reports — `nil` (the default) matches every real backend when
+    /// nothing is already running; tests exercising adoption set this before `load()`/the call
+    /// under test.
+    var existingConnection: LiveConnectionStatus?
 
     init(_ scripts: [String: [Outcome]]) {
         self.scripts = scripts
@@ -72,6 +76,8 @@ private final class ScriptedConnectionProvider: WarpConnectionProvider, @uncheck
         case .fail(let timedOut): throw WarpConnectionError("scripted failure", timedOut: timedOut)
         }
     }
+
+    func currentConnection() async throws -> LiveConnectionStatus? { existingConnection }
 }
 
 private extension NSLock {
@@ -196,6 +202,53 @@ final class ZarpEngineTests: XCTestCase {
         XCTAssertEqual(resultsAfterUpdate, resultsAfterScan, "a preference-only settings update must not erase scan results")
         XCTAssertEqual(selectedAfterUpdate, selectedAfterScan, "a preference-only settings update must not erase the selected strategy")
         XCTAssertEqual(settingsAfterUpdate.isolateTests, false, "the actual preference change must still take effect")
+    }
+
+    func testAdoptExistingConnectionReflectsAnAlreadyLiveDaemonTunnel() async {
+        // Simulates a GUI crash/relaunch: zarpd already has a real persistent connection open
+        // that this fresh engine instance never itself opened.
+        let provider = ScriptedConnectionProvider([:])
+        provider.existingConnection = LiveConnectionStatus(
+            handle: FakeHandle(connectMs: 150, endpoint: "162.159.198.2"),
+            strategyId: "warp-q-google6"
+        )
+        let engine = makeEngine(connections: provider)
+        await engine.load()
+
+        let stateBefore = await engine.state
+        XCTAssertEqual(stateBefore, .idle, "must not claim connected before reconciling")
+        await engine.adoptExistingConnection()
+
+        let state = await engine.state
+        let selected = await engine.selectedStrategyId
+        XCTAssertEqual(state, .connected)
+        XCTAssertEqual(selected, "warp-q-google6")
+        // Adopting must not itself open or close anything — it only reflects what's already there.
+        XCTAssertTrue(provider.openedIds.isEmpty)
+    }
+
+    func testAdoptExistingConnectionDoesNothingWhenEngineAlreadyKnowsItsConnected() async {
+        // A real connection the engine opened itself must never be silently replaced by whatever
+        // a subsequent reconciliation call happens to see.
+        let provider = ScriptedConnectionProvider([
+            "warp-q-google6": [.ok(connectMs: 100), .ok(connectMs: 100), .ok(connectMs: 100)],
+        ])
+        let engine = makeEngine(connections: provider)
+        await engine.load()
+        let strategy = await engine.strategies.first { $0.id == "warp-q-google6" }!
+        _ = await engine.use(strategy)
+        await engine.waitUntilIdle()
+        let stateAfterUse = await engine.state
+        XCTAssertEqual(stateAfterUse, .connected)
+
+        provider.existingConnection = LiveConnectionStatus(
+            handle: FakeHandle(connectMs: 999, endpoint: "should-not-be-adopted"), strategyId: "warp-q-vk6"
+        )
+        await engine.adoptExistingConnection()
+
+        // Still the strategy the engine itself connected with, not the one reconciliation saw.
+        let selected = await engine.selectedStrategyId
+        XCTAssertEqual(selected, "warp-q-google6")
     }
 
     func testSecondCallWhileBusyIsRefused() async {
