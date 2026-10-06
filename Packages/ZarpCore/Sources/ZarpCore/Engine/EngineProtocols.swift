@@ -28,6 +28,21 @@ public protocol WarpConnectionHandle: Sendable {
     func close() async
 }
 
+/// What a `WarpConnectionProvider` reports back from `currentConnection()` — an already-live
+/// persistent connection it owns, discovered rather than just-opened. `strategyId` is whatever the
+/// original `open(strategy:...)` caller's `strategy.id` was, so the engine can restore which saved
+/// strategy is showing as connected; `nil` if the backend can't identify it (an old connection from
+/// before this field existed, say) — the engine still adopts the connection, just without a name.
+public struct LiveConnectionStatus: Sendable {
+    public let handle: WarpConnectionHandle
+    public let strategyId: String?
+
+    public init(handle: WarpConnectionHandle, strategyId: String?) {
+        self.handle = handle
+        self.strategyId = strategyId
+    }
+}
+
 /// Opens a WARP connection for one strategy.
 ///
 /// TODO(real-Mac PoC): implement this — see the file-level doc comment above for the two
@@ -42,6 +57,13 @@ public protocol WarpConnectionProvider: Sendable {
     ///     `false` for a throwaway scan attempt (Windows `Engine.TestAsync`) that gets closed right
     ///     after probing.
     func open(strategy: Strategy, endpoint: String?, timeoutMs: Int, persistent: Bool) async throws -> WarpConnectionHandle
+
+    /// The backend's own already-live persistent connection, if it has one right now — lets a
+    /// freshly-launched `ZarpEngine` (most concretely: the GUI crashed or was quit and relaunched,
+    /// not the backend) adopt a real tunnel that outlived it instead of showing "disconnected"
+    /// while the tunnel keeps running underneath. `nil` means genuinely idle; connectivity failures
+    /// (the backend isn't reachable at all) still throw `WarpConnectionError`, same as `open`.
+    func currentConnection() async throws -> LiveConnectionStatus?
 }
 
 /// Error from `WarpConnectionProvider.open`. `timedOut` drives the same `err.timeout` vs. generic
@@ -94,6 +116,9 @@ public struct UnimplementedWarpConnectionProvider: WarpConnectionProvider {
     public func open(strategy: Strategy, endpoint: String?, timeoutMs: Int, persistent: Bool) async throws -> WarpConnectionHandle {
         throw WarpConnectionError("macOS networking layer is not implemented yet — see docs/IMPLEMENTATION_PLAN.md")
     }
+    /// `nil`, not a thrown error: there is truly nothing to adopt from a backend that never opens
+    /// anything, which is a different, honest answer from "couldn't check."
+    public func currentConnection() async throws -> LiveConnectionStatus? { nil }
 }
 
 /// Always fails, for the same reason as `UnimplementedWarpConnectionProvider`.

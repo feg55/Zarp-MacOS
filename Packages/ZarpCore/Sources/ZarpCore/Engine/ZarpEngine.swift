@@ -66,6 +66,35 @@ public actor ZarpEngine {
         notify()
     }
 
+    /// Reconciles with a tunnel the backend already has open that this engine instance didn't
+    /// itself start — most concretely, the GUI crashed or was quit and relaunched while `zarpd`
+    /// (a fully independent daemon) kept running. Without this, a freshly-launched engine has no
+    /// way to tell "genuinely idle" apart from "a real tunnel is up, I just don't know about it
+    /// yet," and would show Disconnected while traffic keeps flowing underneath — worse, a user
+    /// pressing Connect in that state would open a *second* tunnel alongside the first rather than
+    /// using or replacing it.
+    ///
+    /// Call at launch (`AppViewModel.start()`) and again whenever the daemon becomes reachable
+    /// after not being (`AppViewModel.pingDaemon()` — the closest thing this IPC design has to an
+    /// explicit "reconnect" event, since every call is already its own short-lived connection; see
+    /// that method's own comment). A no-op if this engine already knows about an active connection
+    /// (`state == .connected`) or is busy with something else — never overwrites a connection the
+    /// engine itself is already tracking, and never races a scan/connect in flight. Errors (the
+    /// backend isn't reachable at all) are swallowed: this is best-effort reconciliation, not a
+    /// user-facing action that should surface a failure.
+    public func adoptExistingConnection() async {
+        guard !busy, state != .connected else { return }
+        guard let status = try? await connections.currentConnection() else { return }
+        activeConnection = status.handle
+        if let strategyId = status.strategyId, let match = strategies.first(where: { $0.id == strategyId }) {
+            selectedStrategyId = strategyId
+            await saveSelected(match)
+            setState(.connected, Msg("detail.strategy", match.name(using: loc)))
+        } else {
+            setState(.connected, Msg("detail.strategy", status.strategyId ?? "?"))
+        }
+    }
+
     public func reloadStrategies() {
         strategyStore.writeTemplateIfMissing()
         strategies = StrategyCatalog.load(customText: strategyStore.loadText()) { [log, loc] line in
