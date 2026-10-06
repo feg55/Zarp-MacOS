@@ -47,6 +47,16 @@ targets:
           DEST="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}"
           mkdir -p "${DEST}/MacOS" "${DEST}/Library/LaunchDaemons"
 
+          # arm64 only, matching ARCHS below — `go build` otherwise builds for whatever the host
+          # is, which would silently ship a daemon that doesn't match a universal app. The cgo
+          # objects (runtime/cgo, net's resolver) are compiled by clang with the *host* SDK's
+          # default deployment target unless told otherwise, which is what produced the
+          # "built for newer macOS (15.0) than being linked (14.0)" linker warnings; pinning both
+          # flags to the app's own deployment target makes the daemon's declared minimum honest.
+          export GOOS=darwin GOARCH=arm64 CGO_ENABLED=1
+          export CGO_CFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
+          export CGO_LDFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
+
           cd "${SRCROOT}/zarpd"
           INFO_PLIST="${SRCROOT}/zarpd/cmd/zarpd/Info.plist"
           go build -ldflags="-linkmode external -extldflags -Wl,-sectcreate,__TEXT,__info_plist,${INFO_PLIST}" \
@@ -65,6 +75,10 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
+        # Apple Silicon only (this port's whole premise, ARCHITECTURE.md §1): the embedded zarpd
+        # Go binary is arm64-only, so a universal app would ship an x86_64 slice with nothing to
+        # talk to. Also keeps a Release build from silently becoming universal.
+        ARCHS: arm64
         ENABLE_HARDENED_RUNTIME: true
         # Plain app, no entitlements needed — the architecture pivot (ARCHITECTURE.md §9-10) means
         # Zarp no longer needs any Apple capability at all, System Extension or otherwise. A free

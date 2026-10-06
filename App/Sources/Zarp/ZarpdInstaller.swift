@@ -1,5 +1,6 @@
 import Foundation
 import ServiceManagement
+import ZarpCore
 
 /// Installs, checks, and removes the `zarpd` privileged LaunchDaemon via `SMAppService` (macOS 13+)
 /// — the modern replacement for `SMJobBless`/`AuthorizationExecuteWithPrivileges`. `zarpd` is
@@ -41,11 +42,24 @@ final class ZarpdInstaller: ObservableObject {
         state = Self.map(service.status)
     }
 
+    /// Thrown by `install()` before touching `SMAppService` at all — see `InstallLocationProblem`
+    /// for why registering from these locations produces a daemon that quietly stops working.
+    struct BadInstallLocation: Error {
+        let problem: InstallLocationProblem
+    }
+
     /// Registers the daemon. Throws on real failure (e.g. the user declined authorization); a
     /// successful call still may leave `state == .requiresApproval` until the user acts on the
     /// System Settings prompt — call `openSystemSettingsLoginItems()` to take them there directly,
     /// matching Apple's documented pattern for this exact status.
+    ///
+    /// Refuses (`BadInstallLocation`, before calling `register()`, so no authorization prompt is
+    /// ever shown for a registration that would be broken anyway) when the app is running from a
+    /// mounted disk image or an App Translocation path.
     func install() throws {
+        if let problem = InstallLocationProblem.detect(bundlePath: Bundle.main.bundleURL.path) {
+            throw BadInstallLocation(problem: problem)
+        }
         try service.register()
         refresh()
     }

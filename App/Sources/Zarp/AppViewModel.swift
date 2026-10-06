@@ -108,6 +108,8 @@ final class AppViewModel: ObservableObject {
         do {
             try installer.install()
             daemonState = installer.state
+        } catch is ZarpdInstaller.BadInstallLocation {
+            daemonActionError = localization.string("daemon.badLocation")
         } catch {
             daemonActionError = String(describing: error)
         }

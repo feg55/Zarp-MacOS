@@ -100,7 +100,7 @@ final class LocalizationTests: XCTestCase {
                     "daemon.title", "daemon.notInstalled", "daemon.requiresApproval", "daemon.enabled",
                     "daemon.notFound", "daemon.unknown", "daemon.respondingYes", "daemon.respondingNo",
                     "daemon.respondingUnknown", "daemon.install", "daemon.restart", "daemon.uninstall",
-                    "daemon.openSettings", "daemon.refresh",
+                    "daemon.openSettings", "daemon.refresh", "daemon.badLocation",
                 ]
                 XCTAssertEqual(missing, expectedGap, "\(language.code).txt is missing unexpected keys: \(missing.subtracting(expectedGap).sorted())")
             }

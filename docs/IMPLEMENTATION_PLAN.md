@@ -473,15 +473,75 @@ first) → `warp=off`, clean teardown, no leaked WARP-address utun. Log-based ev
 only a screenshot — stronger proof, since it's the daemon's own ground truth, not just what the UI
 happened to render.
 
-**Still open, deliberately not built yet:** notarization, `.dmg` packaging, CI — not revisited
-until distribution (as opposed to local install) is actually the next goal. Worth flagging before
-starting that work: notarization specifically requires a **paid** Apple Developer Program
-membership (a Developer ID Application certificate), unlike everything in this phase so far — the
-free Personal Team signing that made `SMAppService` work does not extend to notarization. Also
-untested: a genuinely from-scratch machine that has never run `xcodegen generate`/built this app
-before (everything above was verified via rebuild-in-place on a Mac that had iterated on this exact
-app many times this session) — the resources-copy fix should make that scenario work identically,
-but "should" isn't "verified."
+Packaging is Phase 9 below. Notarization specifically is **not** planned: it requires a paid Apple
+Developer Program membership (a Developer ID Application certificate), unlike everything in this
+phase — the free Personal Team signing that made `SMAppService` work does not extend to it.
+
+## Phase 9 — packaging: an unnotarized `.dmg` — artifact DONE (2026-10-06), first-run install on a second Mac not yet exercised
+
+Decision (user, 2026-10-06): there is no paid Apple Developer Program membership, so no
+notarization and no Developer ID — ship an Apple-Development-signed, **unnotarized** DMG and let
+users clear Gatekeeper once. Same constraint that ruled out NetworkExtension (`ARCHITECTURE.md`
+§10); `SMAppService.daemon` stays viable because it only needs the app and daemon to share a Team ID.
+
+### `scripts/package.sh`
+
+One command, from a clean checkout with Go and xcodegen installed (build machine only — the
+finished app needs neither): `scripts/package.sh` → `build/Zarp-<version>-arm64.dmg` plus its
+`.sha256`. It always builds from a **fresh** DerivedData directory, never an incremental one —
+Phase 8's masked-resources bug is exactly what a stale incremental build hides, and this script's
+whole job is producing the artifact people install. It then checks the bundle before packaging:
+`zarpd`, the LaunchDaemon plist, `Resources/Lang` and `Resources/blobs/*.bin` all present; no
+debug-only dylibs; `zarpd` has its embedded `Info.plist`; both binaries are arm64-only; `codesign
+--verify --deep --strict` passes; and the app's and daemon's Team IDs match (what `SMAppService`
+requires). The image holds `Zarp.app`, an `Applications` shortcut, and `READ ME FIRST.txt` (English
+and Russian first-launch steps, `scripts/dmg-readme.txt`); the script mounts the finished image
+read-only and re-verifies the app's signature from inside it.
+
+Build-configuration changes this needed (`project.yml`): `ARCHS: arm64` (the embedded Go daemon is
+arm64-only, so a universal app would ship an x86_64 slice with nothing to talk to — and a Release
+build is universal by default); and the daemon's Go build now pins `GOARCH=arm64` plus
+`CGO_CFLAGS`/`CGO_LDFLAGS=-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET`, which removed the
+"object file built for newer macOS (15.0) than being linked (14.0)" linker warnings and makes both
+binaries' `LC_BUILD_VERSION minos` read 14.0, matching `LSMinimumSystemVersion`.
+
+### Verified on the finished artifact (independent of the script's own checks)
+
+Mounted the DMG separately and inspected it: contents as above; only `Zarp` and `zarpd` under
+`Contents/MacOS` (no `Zarp.debug.dylib`/`__preview.dylib`); `TeamIdentifier=G86X3LK72R` with
+hardened-runtime flag on the app; `minos` 14.0 on both binaries; `spctl --assess --type execute`
+→ **`rejected`** (exit 3), which is Gatekeeper's expected verdict for an unnotarized build and
+exactly why the first-run steps exist. A full from-scratch Release build + packaging takes ~30 s.
+
+### Install-location guard (`InstallLocationProblem`, `ZarpdInstaller.install()`)
+
+`SMAppService`'s plist uses `BundleProgram`, a path *relative to the app bundle*, so a daemon
+registered while the app runs from a mounted `.dmg` (opened in place instead of dragged out) or an
+**App Translocation** path (a quarantined app launched straight from Downloads) is registered
+against a location that disappears — the UI would say "Installed" while the daemon stops working
+once the image is ejected or the translocation mount is discarded. `install()` now refuses in
+exactly those two cases, before calling `register()` (so no authorization prompt is shown for a
+registration that would be broken anyway), with a localized "drag Zarp into Applications first"
+message. Anything else — `/Applications`, `~/Applications`, a DerivedData development build — is
+deliberately allowed. Path classification is a pure function in ZarpCore with unit tests
+(`InstallLocationTests`); the UI path itself has not been exercised live yet.
+
+### Known limitations, stated rather than glossed
+
+- **Signing certificate lifetime.** Free Apple Development certificates last a year: this one is
+  valid 2026-09-26 → **2027-09-26**. Builds are signed without a secure timestamp (`codesign -dvv`
+  shows `Signed Time` only), and a signature without one is generally only trusted while its
+  certificate is valid, so builds distributed this way should be expected to stop validating after
+  that date and need re-signing. The exact failure mode is untested (it can't be, until then).
+- **Tested on one Mac.** macOS 15.8.1, Apple Silicon. The declared minimum is macOS 14.0 (both
+  binaries are stamped for it) but nothing here has run on 14.x.
+- **First-run Gatekeeper flow on a second Mac not yet exercised.** A locally built app has no
+  quarantine attribute, so this Mac never sees the prompt; the README's wording for the System
+  Settings step comes from this Mac's own localization files (`Open Anyway` /
+  «Все равно открыть», pane «Конфиденциальность и безопасность»), but the *initial* "cannot verify
+  the developer" dialog's exact text hasn't been observed, so the README doesn't quote it.
+- **`zarpd` isn't signed with the hardened runtime or a secure timestamp** — irrelevant while
+  unnotarized, a prerequisite if a Developer ID ever becomes available.
 
 ## Risks
 
