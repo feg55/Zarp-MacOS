@@ -141,11 +141,23 @@ final class AppViewModel: ObservableObject {
         await pingDaemon()
     }
 
+    /// Also the closest thing this IPC design has to an explicit "reconnected" event — every call
+    /// is already its own short-lived connect/disconnect, there's no persistent session to notice
+    /// dropping and recovering — so a ping that succeeds *after one that didn't* (including the
+    /// very first one, at launch, which is exactly the GUI-relaunch case) reconciles the engine
+    /// with whatever the daemon actually has running (`ZarpEngine.adoptExistingConnection()`'s own
+    /// doc comment). Deliberately not on every successful ping: that method is already a safe
+    /// no-op once the engine knows it's connected, but skipping the redundant call when nothing
+    /// could have changed keeps this from doing pointless work on every routine status refresh.
     func pingDaemon() async {
         guard let zarpdClient else { return }
+        let wasResponding = daemonPing != nil
         do {
             daemonPing = try await zarpdClient.ping()
             daemonPingError = nil
+            if !wasResponding {
+                await engine.adoptExistingConnection()
+            }
         } catch {
             daemonPing = nil
             daemonPingError = (error as? WarpConnectionError)?.message ?? String(describing: error)

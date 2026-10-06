@@ -333,7 +333,7 @@ to host" failures instead of real DPI timeouts. Per explicit user instruction, V
 connect/disconnect is never done by Claude directly — only reported, with the user toggling it
 themselves.
 
-## Phase 8 — install/manage `zarpd` cleanly — core mechanism DONE (2026-09-26), uninstall untested live
+## Phase 8 — install/manage `zarpd` cleanly — DONE (2026-10-06), crash recovery proven
 
 **The load-bearing question, checked before writing anything else:** does `SMAppService.daemon`
 registration actually work under this Mac's free "Personal Team" signing identity, the way
@@ -415,19 +415,73 @@ install approval:**
    launchd-managed, resources-bug-fixed daemon — independently verified `warp=on` and a matching
    `zarpd: open #25 transport=masqueH3 ...` log line.
 
-**Not yet exercised live:** clicking "Uninstall" (`unregister()`) — mechanically the same,
-already-proven-working API surface as `register()`, just not clicked through the real UI yet, since
-doing so tears down the currently-working installed daemon and costs the user another approval
-cycle to reinstall. Also not yet tested: a genuinely from-scratch machine that has never run
-`xcodegen generate`/built this app before (everything above was verified via rebuild-in-place on a
-Mac that had iterated on this exact app many times already this session) — the resources-copy fix
-above should make that scenario work identically, but "should" isn't "verified," so it's flagged
-here rather than assumed.
+### Uninstall/reinstall lifecycle — verified live (2026-10-06)
 
-**Still open, deliberately not built yet:** crash/restart cleanup for routes and utun left dangling
-if `zarpd` dies mid-connection (`ARCHITECTURE.md` §9.3); notarization, `.dmg` packaging, CI — same
-shape as originally planned, not revisited until distribution (as opposed to local install) is
-actually the next goal.
+Clicked "Uninstall" through the real UI (not just reasoned about): `zarpd` process gone, `launchctl
+print system/io.github.zarp.mac.zarpd` → `Could not find service` (genuinely unregistered, not
+just the process happening to be dead), no Zarp-owned utun/route left (only an unrelated Happ VPN
+interface present), UI correctly showed "Not installed." Clicked "Install" again immediately after:
+**no new authorization prompt** — macOS remembers a background-item approval per app identity, not
+per individual `register()` call, so only the very first install of a given signed app needs the
+Touch ID/password step. launchd started `zarpd` as root again, a real strategy connected
+(independently verified `warp=on`), and disconnecting through the UI tore everything down cleanly
+(utun interface removed entirely, no dangling route).
+
+### Crash recovery — verified live (2026-10-06)
+
+**`zarpd` itself crashing while a tunnel is active** (`kill -9` on the daemon process): the kernel
+destroys the utun interface the instant the process's file descriptors close — true even for
+SIGKILL, no graceful code path needed — which in turn auto-flushes any route referencing that
+interface; nothing dangling survives. `KeepAlive: {SuccessfulExit: false}` restarts `zarpd` with a
+clean slate (a brand new process has no memory of the old in-memory `conns` map, so this is "clean
+up deterministically," not "resume the old tunnel" — resuming a live QUIC/MASQUE session across a
+process restart isn't practical, and isn't attempted). A route that *appeared* to persist
+afterward, on inspection, belonged to the test Mac's own unrelated Happ VPN reconnecting and
+coincidentally claiming the just-freed interface number — confirmed via `scutil --nc list` and the
+route's flags (Happ's own pattern, not `route.AddHostRoute`'s), not a Zarp leak.
+
+**The GUI crashing while `zarpd` keeps a tunnel alive** surfaced a real, distinct problem: the
+system stayed completely healthy (zarpd and the tunnel were entirely untouched), but the relaunched
+GUI showed **Disconnected** while a real connection was still up — `ZarpEngine` had no way to tell
+"genuinely idle" apart from "a tunnel exists, I just don't know about it yet." Fixed with a new
+read-only `"status"` IPC method and reconciliation logic:
+
+- `zarpd` now tracks `strategyId` (new `OpenParams.strategyId`, passed through from
+  `ZarpdClient.open`), `transport`, and `startedAt` per connection, and `handleStatus()` reports the
+  one *persistent* live connection, if any (`StatusResult{daemonRunning, connected, connectionId,
+  strategyId, endpoint, transport, connectMs, connectStartedAt, utunName}`).
+- `WarpConnectionProvider` gained `currentConnection() async throws -> LiveConnectionStatus?`
+  (`EngineProtocols.swift`) — `ZarpdClient` implements it via `"status"`; the `Unimplemented*`
+  placeholder returns `nil` (truthfully "nothing to adopt," not an error).
+- `ZarpEngine.adoptExistingConnection()` calls it and, if the daemon reports a live connection,
+  sets `state = .connected` and restores the matching saved strategy — but only when the engine
+  doesn't already think it's connected and nothing else is in flight (`!busy`), so it can never
+  clobber a connection the engine opened itself, and never races a scan/connect. Reuses the same
+  `WarpConnectionHandle`/`ZarpdConnectionHandle` the normal `open()` path returns, so the *existing*
+  `disconnect()` code works unchanged on an adopted connection — no special-casing needed.
+- Called from `AppViewModel.pingDaemon()` whenever a ping succeeds right after one that didn't
+  (including the very first ping at launch) — the closest thing this request/response-per-call IPC
+  design has to an explicit "reconnected" event, since there's no persistent session to watch drop
+  and recover.
+
+**Verified live, the user's own exact test sequence:** connected through the real UI (`warp=on`,
+`zarpd: open #1 ... persistent=true`) → `kill -9` on the GUI process only → relaunched the GUI →
+**zarpd's log shows no second `open` call** (the relaunched GUI did not create a duplicate tunnel)
+→ clicked the power button once → **the same connection `#1`/same utun closed** (proof the GUI had
+correctly adopted and was tracking the pre-existing connection, not a fresh one it had to open
+first) → `warp=off`, clean teardown, no leaked WARP-address utun. Log-based evidence rather than
+only a screenshot — stronger proof, since it's the daemon's own ground truth, not just what the UI
+happened to render.
+
+**Still open, deliberately not built yet:** notarization, `.dmg` packaging, CI — not revisited
+until distribution (as opposed to local install) is actually the next goal. Worth flagging before
+starting that work: notarization specifically requires a **paid** Apple Developer Program
+membership (a Developer ID Application certificate), unlike everything in this phase so far — the
+free Personal Team signing that made `SMAppService` work does not extend to notarization. Also
+untested: a genuinely from-scratch machine that has never run `xcodegen generate`/built this app
+before (everything above was verified via rebuild-in-place on a Mac that had iterated on this exact
+app many times this session) — the resources-copy fix should make that scenario work identically,
+but "should" isn't "verified."
 
 ## Risks
 
