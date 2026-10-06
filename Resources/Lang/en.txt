@@ -223,6 +223,7 @@ daemon.unknown = Unknown status ({0})
 daemon.respondingYes = Responding (version {0}, pid {1})
 daemon.respondingNo = Not responding: {0}
 daemon.respondingUnknown = Checking...
+daemon.badLocation = Zarp is running from a disk image or a temporary download location, and the background service would stop working as soon as that goes away. Drag Zarp into the Applications folder, eject the disk image, open Zarp from Applications, then click Install again.
 daemon.install = Install
 daemon.restart = Restart
 daemon.uninstall = Uninstall
