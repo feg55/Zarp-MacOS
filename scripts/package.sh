@@ -12,6 +12,10 @@
 # into the image, walks them through System Settings > Privacy & Security > Open Anyway. Needs Go
 # and xcodegen on the *build* machine only — the finished app has no such dependency.
 #
+# Before anything is built it runs the test suites (Go: vet + tests with the race detector; Swift:
+# ZarpCore) and checks THIRD_PARTY_NOTICES.md is current — an installer must never be produced from
+# code that fails its own tests. `--skip-tests` is for repeating a packaging step only.
+#
 # Always builds from a clean DerivedData directory, never an incremental one: an incremental
 # build once hid a real bug for an entire session (resources never actually copied into the
 # bundle; docs/IMPLEMENTATION_PLAN.md, Phase 8), and a script whose whole job is producing the
@@ -21,6 +25,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 BUILD="$ROOT/build"
+mkdir -p "$BUILD"
 DERIVED="$BUILD/DerivedData"
 STAGE="$BUILD/dmg-stage"
 LOG="$BUILD/xcodebuild.log"
@@ -28,8 +33,26 @@ LOG="$BUILD/xcodebuild.log"
 fail() { echo "package.sh: $*" >&2; exit 1; }
 step() { echo; echo "==> $*"; }
 
+SKIP_TESTS=0
+for arg in "$@"; do
+  case "$arg" in
+    --skip-tests) SKIP_TESTS=1 ;;
+    *) fail "unknown argument: $arg" ;;
+  esac
+done
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin:$PATH"
+
+if [[ $SKIP_TESTS -eq 0 ]]; then
+  step "Go: vet and tests (race detector)"
+  ( cd "$ROOT/zarpd" && go vet ./... && go test -race -count=1 ./... ) || fail "Go checks failed"
+  step "Swift: ZarpCore tests"
+  ( cd "$ROOT/Packages/ZarpCore" && swift test ) >"$BUILD/swift-test.log" 2>&1 \
+    || { tail -40 "$BUILD/swift-test.log" >&2; fail "ZarpCore tests failed (log: ${BUILD#"$ROOT"/}/swift-test.log)"; }
+  step "Third-party notices"
+  "$ROOT/scripts/gen-notices.sh" --check || fail "run scripts/gen-notices.sh and commit the result"
+fi
+
 rm -rf "$DERIVED" "$STAGE"
-mkdir -p "$BUILD"
 
 step "Generating Xcode project"
 xcodegen generate
@@ -69,6 +92,12 @@ DAEMON_TEAM=$(codesign -dv "$DAEMON" 2>&1 | sed -n 's/^TeamIdentifier=//p')
 [[ -n "$APP_TEAM" && "$APP_TEAM" == "$DAEMON_TEAM" ]] \
                                              || fail "Team ID mismatch: app '$APP_TEAM' vs zarpd '$DAEMON_TEAM' (SMAppService requires them to match)"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
+# The app compares the daemon's reported version with its own to notice a stale daemon after an
+# update: an unstamped or mismatched build would make it restart the daemon on every launch.
+DAEMON_VERSION=$("$DAEMON" -version)
+[[ "$DAEMON_VERSION" == "$VERSION" ]]        || fail "zarpd reports version '$DAEMON_VERSION' but the app is '$VERSION'"
+[[ -d "$APP/Contents/Resources/Licenses" && -f "$APP/Contents/Resources/Licenses/THIRD_PARTY_NOTICES.md" ]] \
+                                             || fail "Resources/Licenses is missing from the bundle"
 echo "version $VERSION, team $APP_TEAM, arm64, zarpd embedded + signed, resources present"
 
 step "What Gatekeeper makes of it (informational — rejection is expected, this build is unnotarized)"

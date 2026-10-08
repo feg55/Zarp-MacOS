@@ -6,16 +6,21 @@ import SwiftUI
 /// fraction of the control size) so both look the same at any size, including the 200×200pt the
 /// Windows main window uses.
 ///
-/// UNVERIFIED: not rendered on a real display (see `Theme.swift`'s note).
+/// The spinner is driven by a `TimelineView` that is *paused* whenever the button isn't busy. (A
+/// `repeatForever` animation on a `@State` angle never stops once started: the canvas kept being
+/// redrawn 60 times a second for as long as the app ran, long after the last scan.)
 struct PowerButton: View {
     enum Look { case off, busy, on }
 
     let look: Look
     let action: () -> Void
 
-    @State private var angle: Double = 0
     @State private var isHovering = false
     @State private var isPressed = false
+
+    private static let size: CGFloat = 200
+    /// One full turn of the busy arc, in seconds.
+    private static let spinPeriod: Double = 1.1
 
     private var ringColor: Color {
         switch look {
@@ -34,6 +39,42 @@ struct PowerButton: View {
     }
 
     var body: some View {
+        TimelineView(.animation(paused: !isBusy)) { timeline in
+            canvas(angle: spinAngle(at: timeline.date))
+        }
+        .frame(width: Self.size, height: Self.size)
+        .contentShape(Circle())
+        .onHover { isHovering = $0 }
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { value in
+                    isPressed = false
+                    // Like a real button: releasing the pointer outside the circle cancels the
+                    // press instead of firing it.
+                    if Self.contains(value.location) { action() }
+                }
+        )
+        .accessibilityAddTraits(.isButton)
+        // The DragGesture above only responds to real pointer events, so VoiceOver's "activate"
+        // and any AXPress-based automation (Accessibility Inspector, UI tests) would otherwise
+        // silently do nothing despite `.isButton` making this look activatable — this is what
+        // actually wires that up, same as a plain `Button` gets for free.
+        .accessibilityAction(.default) { action() }
+    }
+
+    /// Whether a point in the view's own coordinates is inside the button's circle.
+    static func contains(_ point: CGPoint) -> Bool {
+        let center = size / 2
+        return hypot(point.x - center, point.y - center) <= center
+    }
+
+    private func spinAngle(at date: Date) -> Double {
+        let phase = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.spinPeriod) / Self.spinPeriod
+        return phase * 360
+    }
+
+    private func canvas(angle: Double) -> some View {
         Canvas { context, size in
             let side = min(size.width, size.height) - 8
             let rect = CGRect(x: (size.width - side) / 2, y: (size.height - side) / 2, width: side, height: side)
@@ -73,33 +114,7 @@ struct PowerButton: View {
             stem.addLine(to: CGPoint(x: iconRect.midX, y: iconRect.minY + iconRect.height * 0.42))
             context.stroke(stem, with: .color(iconColor), style: StrokeStyle(lineWidth: iconSize * 0.11, lineCap: .round))
         }
-        .frame(width: 200, height: 200)
-        .contentShape(Circle())
-        .onHover { isHovering = $0 }
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded { _ in
-                    isPressed = false
-                    action()
-                }
-        )
-        .onAppear { startSpinIfNeeded() }
-        .onChange(of: isBusy) { _, _ in startSpinIfNeeded() } // macOS 14+ two-param onChange
-        .accessibilityAddTraits(.isButton)
-        // The DragGesture above only responds to real pointer events, so VoiceOver's "activate"
-        // and any AXPress-based automation (Accessibility Inspector, UI tests) would otherwise
-        // silently do nothing despite `.isButton` making this look activatable — this is what
-        // actually wires that up, same as a plain `Button` gets for free.
-        .accessibilityAction(.default) { action() }
     }
 
     private var isBusy: Bool { if case .busy = look { return true }; return false }
-
-    private func startSpinIfNeeded() {
-        guard isBusy else { return }
-        withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) {
-            angle += 360
-        }
-    }
 }

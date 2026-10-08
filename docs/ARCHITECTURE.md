@@ -7,11 +7,13 @@ as Zarp-Android — instead of trying to intercept the official Cloudflare WARP 
 See §9 for why, and §10 for the abandoned approach's own record (kept, not deleted, because the
 reasoning and the confirmed findings are still useful).
 
-**Status of the pieces below:** §2's `ZarpCore` Swift package (strategy model/catalog/parser,
-scan/self-heal engine, settings, localization, logging) and the SwiftUI UI are written, compiling,
-and passing tests on a real Mac (`docs/IMPLEMENTATION_PLAN.md` phase 1, done). None of `zarpd` (the
-new Go daemon this document describes) exists yet — that starts at `docs/IMPLEMENTATION_PLAN.md`
-phase 2.
+**Status of the pieces below (2026-10-06):** everything this document describes now exists:
+`ZarpCore` (strategy model/catalog/parser, scan/self-heal engine, settings, localization, logging),
+the SwiftUI app, and `zarpd` (the Go daemon: MASQUE dial with strategies, utun, routes, DNS, IPC),
+installed as a LaunchDaemon via `SMAppService`. `docs/IMPLEMENTATION_PLAN.md` records, phase by
+phase, what was verified on a real Mac and how; its Phase 10 covers the full-tunnel mode and the fixes
+from a whole-project review. Where this document says something is "open", check the plan for
+whether it has been closed since.
 
 ## 1. Processes
 
@@ -44,16 +46,17 @@ phase 2.
                               Cloudflare WARP MASQUE endpoint (162.159.x.x)
 ```
 
-Fail-open on the routing side: if `zarpd` dies, its routes/utun should be torn down (either by
-`zarpd` itself on exit, or detected and cleaned up on the next launch) rather than leaving the
-user with no default route. Exactly how — a `LaunchDaemon` exit handler, a watchdog, or both — is
-open, see `docs/IMPLEMENTATION_PLAN.md` phase 2/8.
+Fail-open on the routing side (decided, §11): the full-tunnel routes are bound to the utun interface, so if
+`zarpd` dies — even by `kill -9` — the kernel removes them with the interface and traffic goes back out the
+normal way; a DNS override saved to disk is restored by the next daemon start.
 
-IPC surface (shape only, not a wire format yet — see §9.4):
-`connect(strategyID)`, `disconnect()`, `testStrategy(strategyID, endpoint)`, `startQuickScan()`,
-`startFullScan()`, `cancelScan()`, `getStatus()`, `getLogs()`. This deliberately mirrors
-`ZarpEngine`'s own vocabulary rather than inventing a new one — `zarpd` is a `Tester`
-implementation (§4), not a second scan engine.
+IPC surface (`zarpd/ipc/protocol.go`, protocol version 2; newline-delimited JSON over a Unix socket):
+`ping`, `status`, `register`, `open`, `close`, `measure`, `logs`, `restart`. This deliberately mirrors
+`ZarpEngine`'s own vocabulary rather than inventing a new one — `zarpd` is a `WarpConnectionProvider`
+implementation (§4), not a second scan engine; scanning, scoring and self-healing stay in Swift.
+Strategies are flattened to what the daemon executes (fake-packet steps, a TCP split) and every field
+is validated by the daemon itself (bounds, a fixed blob list, endpoints only inside Cloudflare's WARP
+ranges): it is a root process taking requests from user-level code.
 
 ## 2. Code layout
 
@@ -80,15 +83,19 @@ project.yml       XcodeGen spec for the App target
 PoC/Filter/       REJECTED approach (NEFilterPacketProvider) — kept only as a record, not built
                   on. See §10.
 
-zarpd/            NOT YET STARTED — this document's new subject. Planned layout, subject to change
-                  once phase 2/3 (docs/IMPLEMENTATION_PLAN.md) are actually written and run:
-    cmd/zarpd/         daemon entry point, IPC server
-    tun/               utun open/configure/close (darwin-specific)
-    route/             default-route replace/restore, endpoint exclusion, DNS
-    warp/              account registration/config (usque-based), MASQUE dial (H3/H2),
-                        strategy executor (fake packets on the dial socket, TTL, TLS split/disorder)
-    ipc/               the app<->daemon protocol
-```
+zarpd/            the Go daemon (its own module)
+    cmd/zarpd/         daemon entry point: flags, logging (rotating file + in-memory ring), signals
+    cmd/zarpctl/       command-line client for the IPC protocol (development and the integration test)
+    daemon/            the connection registry (Manager), request handlers, the real Opener (dial +
+                        utun + routes), endpoint rotation pool, trace measurement, log ring
+    ipc/               the app<->daemon protocol, request validation, the socket server (peer
+                        credential check, limits, per-request cancellation)
+    route/             routing table / interface / DNS changes behind a command Runner: single host
+                        route, full tunnel (§11), DNS override with crash-safe backup
+    tunnel/            the utun <-> MASQUE packet pump
+    warp/              account registration, MASQUE dial (H3/H2), strategy executor (fake packets,
+                        TTL, TLS split/disorder)
+    cmd/*poc           the phase 2-6 proof-of-concept commands, kept compiling as a record
 
 `ZarpCore` still holds all strategy/scan/settings/localization logic and has zero
 AppKit/SwiftUI/network dependencies (`swift test` runs it standalone). `EngineProtocols.swift`
@@ -183,16 +190,21 @@ close button, ⌘Q, and the menu bar Quit item alike (`WindowCloseInterceptor`).
 
 - `~/Library/Application Support/Zarp/zarp.json` — settings and results (same fields as Windows `AppConfig`).
 - `~/Library/Application Support/Zarp/strategies.txt` — custom strategies.
-- `~/Library/Logs/Zarp/zarp.log` — app log; `zarpd`'s own log lines reach it via IPC (`getLogs()`).
+- `~/Library/Logs/Zarp/zarp.log` — app log (2 MB, rotated to `.1`); `zarpd`'s own log lines reach it via
+  the `logs` IPC method, prefixed "zarpd:". The daemon itself writes `/Library/Logs/Zarp/zarpd.log`
+  (2 MB, rotated).
 - No telemetry. Network requests: `cdn-cgi/trace` during tests, as on Windows. No zapret2 downloads.
 
 ## 7. Privileged daemon installation
 
-`zarpd` runs as root (it needs to create a utun device and change routes) but the GUI app does
-not. Planned mechanism: `SMAppService.daemon`, which requires one admin authentication at install
-time (System Settings prompts the user), same as the LaunchDaemon helper the old design (§10)
-already planned to use for its injector — this part of the plan survives the pivot unchanged.
-Not yet implemented; see `docs/IMPLEMENTATION_PLAN.md` phase 8.
+`zarpd` runs as root (it needs to create a utun device and change routes and DNS) but the GUI app does
+not. It is installed with `SMAppService.daemon` (`ZarpdInstaller.swift`), which requires one admin
+authentication and one approval in System Settings. Because the daemon is root, a release build only
+registers it from `/Applications` (an executable in a folder the user can write would be a path to
+root); the app also refuses a disk image or an App Translocation path. The IPC socket
+(`/var/run/zarpd.sock`, group `staff`, 0660) is further restricted by a kernel-reported peer check: only
+root and the console user may talk to the daemon. After an app update the old daemon keeps running; the
+app compares versions on every ping and restarts it once when it is stale.
 
 ## 8. Licensing
 
@@ -288,6 +300,22 @@ route for the WARP endpoint IP is also needed defensively; IPv6 handling; DNS wh
 up; and cleanup after a crash (stale routes left behind if `zarpd` dies without running its
 shutdown path). This is squarely the next thing to verify, not guessed at.
 
+**Update (Phase 10):** the full-tunnel mode and everything listed as open above are implemented (§11).
+The expectation written here at first — that `IP_BOUND_IF` alone keeps the control socket off the tunnel
+once the default route is taken over — **was wrong**, and the first real-network run of
+`scripts/test-integration.sh` (2026-10-08) showed it: the narrow-route connections worked, but a full
+tunnel died within a millisecond of its routes going in, with `ENETUNREACH` on the bound control socket.
+On the primary network service there is no interface-scoped default route, so a bound socket falls back to
+the ordinary table, meets the more specific `0.0.0.0/1` via the utun, and gives up. The fix is the
+standard one (wg-quick, OpenVPN): before any `/1` route goes in, the WARP endpoint gets a **host route
+through the physical gateway** (`zarpd/route/exclusion.go`), which is more specific than any `/1`. **Verified
+2026-10-08 on a real Mac (Wi-Fi, VPN off), second run of the script, 56/56 checks:** the tunnel stays up;
+the routing table shows `0/1` and `128.0/1` via the utun plus `162.159.198.2 → 192.168.34.1 UGHS en0`;
+`route get` for the endpoint answers `en0`; traffic is `warp=on` for IPv4 and IPv6, an 8 MB download
+completes, DNS points at `1.1.1.1` and is restored exactly (here: "no DNS servers set" → set to Empty
+again); after `kill -9` the `/1` routes vanish by themselves while the host route stays until the next
+start removes it via the journal; SIGTERM restores everything at once.
+
 **Real-world wrinkle already found:** on the Mac this was tested on, `route -n get default`
 reported another tunnel interface (a `utunN`, presumably an existing corporate VPN or similar) as
 the current default, not a hardware NIC — `CurrentDefault()` handled this correctly (it binds to
@@ -296,16 +324,16 @@ reminder that "physical interface" here means "whatever currently gets to the re
 literally always Wi-Fi/Ethernet, and that Zarp running on a Mac that's already behind another VPN
 is a real scenario to keep handling correctly, not an edge case to dismiss.
 
-### 9.4 IPC shape (not decided)
+### 9.4 IPC shape (decided)
 
-The pivot brief's proposed call shape (`connect`, `disconnect`, `testStrategy`, `startQuickScan`,
-`startFullScan`, `cancelScan`, `getStatus`, `getLogs`) maps directly onto `EngineProtocols.swift`'s
-existing `WarpConnectionProvider`/`WarpProbe` shape — deliberately, so `zarpd` is *a*
+The call shape (`ping`, `status`, `register`, `open`, `close`, `measure`, `logs`, `restart`) maps directly
+onto `EngineProtocols.swift`'s `WarpConnectionProvider`/`WarpProbe` — deliberately, so `zarpd` is *a*
 `WarpConnectionProvider` implementation (talking over IPC) rather than a second scan/state engine
-duplicating `ZarpEngine`. Transport is not decided: a local Unix domain socket with a small
-length-prefixed or line-delimited JSON protocol is the likely first cut (simple on both the Swift
-and Go sides, no code-generation tooling required to start), upgradeable later. XPC was the old
-design's choice (§10) for a Swift-to-Swift/ObjC boundary; it's less natural for a Swift-to-Go one.
+duplicating `ZarpEngine`. Transport: a Unix domain socket with newline-delimited JSON (simple on both the
+Swift and Go sides, no code generation); XPC was the old design's choice (§10) for a Swift-to-Swift/ObjC
+boundary and is less natural for Swift-to-Go. A client keeps its connection open until it has read the
+answer: the server treats the client going away as "abandon what's in flight for it", which is how an
+`open` that is still dialing is cancelled when the user presses Cancel.
 
 ### 9.5 What Zarp-Android does *not* have that this design still needs
 
@@ -377,3 +405,45 @@ pivot brief asks this new architecture to avoid requiring for basic functionalit
 repo as that record rather than deleted; they are not built into the app going forward. See
 `docs/MACOS_NETWORK_RESEARCH.md` for the full research trail (Q1–Q8, the entitlement findings,
 sources) and `docs/IMPLEMENTATION_PLAN.md`'s old phase list (also kept, marked superseded).
+
+## 11. Full tunnel, fail-safety and recovery (Phase 10)
+
+A persistent connection (`routeAll`) makes the utun carry **all** of the machine's traffic; a scan's test
+connection still routes only the measurement host (`1.1.1.1`), which is all a scan needs.
+
+**Routes** follow `wg-quick`'s macOS shape: `0.0.0.0/1` and `128.0.0.0/1` (and `::/1`, `8000::/1` when WARP
+assigned an IPv6 address) added *through the utun interface*. They are more specific than the default
+route, so they win, and the real default route is never modified. Because they are bound to the interface,
+the kernel removes them when the interface disappears — **even if `zarpd` is killed with `-9`** — so a
+crash fails open (traffic goes back out the normal way) instead of leaving a default route into a dead
+tunnel. If either IPv4 route cannot be added (typically because another VPN already owns it) everything
+done so far is rolled back and the connect fails with a clear message; IPv6 and DNS are best-effort and
+reported as warnings. The full tunnel is refused outright when the default route is itself on a `utun`
+(another VPN/proxy): two tunnels fighting for the same routes is not a supported configuration.
+
+**The endpoint exclusion route.** The tunnel's own control connection (QUIC/TCP to the WARP endpoint) must
+keep using the physical network, or the tunnel would run inside itself. Binding its socket to the physical
+interface is not enough (§9.3), so `route -n add -host <endpoint> <gateway>` (or `-interface <if>` when the
+default route has no gateway) goes in *first* and comes out *last*. Unlike the `/1` routes this one is not
+tied to the utun and would survive a `kill -9`, so it is written to `/var/db/zarpd/exclusions.json`
+**before** it is added and deleted from the journal after it is removed; whatever the journal still lists at
+the next daemon start is deleted then, together with the DNS recovery. A route for the endpoint that
+already exists through the same interface is used as it is and left alone afterwards; one through another
+interface (another VPN pulling the endpoint into its tunnel) fails the connect.
+
+**DNS** is overridden with `networksetup -setdnsservers` on the network service of the physical
+interface (Cloudflare's resolvers; fixed in the daemon, never taken from a client — a client-chosen DNS
+through a root daemon would be a hijack primitive). The original setting is written to
+`/var/db/zarpd/dns-backup.json` **before** anything changes and restored on disconnect, on SIGTERM, and —
+after a crash — at the next daemon start, before any request is served. The exclusion-route journal is
+recovered at the same moment.
+
+**One tunnel at a time.** All connections share the one measurement route, so a new `open` closes whatever
+is still open (the previous persistent connection, or a test connection whose client crashed). A test
+connection also carries a lease and is reaped if its client never closes it. A tunnel whose data plane dies
+by itself (MASQUE session lost, network change) is torn down — routes and DNS restored — and reported as
+lost; the app polls every few seconds, shows the loss, and (if enabled) reconnects with the same strategy a
+few times, never rescanning and never counting it against the strategy.
+
+**What cannot be tested without root and a network** lives in `scripts/test-integration.sh`, which runs a
+private `zarpd` against the real network and checks every claim above, including the `kill -9` case.

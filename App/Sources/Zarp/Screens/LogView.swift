@@ -4,8 +4,6 @@ import ZarpCore
 /// Collapsible log panel at the bottom of the main window — matches Windows Zarp's `_log`
 /// TextBox (`UI/MainForm.cs`): monospace, dim text, dark panel background, newest line at the
 /// bottom, auto-scrolled.
-///
-/// UNVERIFIED: not rendered on a real display (see `Theme.swift`'s note).
 struct LogView: View {
     let lines: [LogEntry]
 

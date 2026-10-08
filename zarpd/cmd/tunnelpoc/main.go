@@ -180,6 +180,7 @@ func dialH3(cfg *usqueconfig.Config, phys *route.Physical, tlsConfig *tls.Config
 		return nil, fmt.Errorf("ListenUDP: %w", err)
 	}
 	if err := phys.BindUDP(udpConn); err != nil {
+		_ = udpConn.Close()
 		return nil, fmt.Errorf("BindUDP (IP_BOUND_IF): %w — this is the routing-loop guard, not optional", err)
 	}
 
@@ -243,7 +244,9 @@ func dialH2(cfg *usqueconfig.Config, phys *route.Physical, tlsConfig *tls.Config
 
 	dialer := &net.Dialer{Control: phys.Control}
 	fmt.Println("--- TCP + TLS handshake beginning ---")
-	return warp.DialH2(context.Background(), dialer, endpoint, tlsConfig, desync, 15*time.Second)
+	// One context is both the session lifetime and the dial deadline source here: this PoC
+	// holds the tunnel for its own -duration and exits.
+	return warp.DialH2(context.Background(), context.Background(), dialer, endpoint, tlsConfig, desync, 15*time.Second)
 }
 
 func configureAddress(name, local string) error {

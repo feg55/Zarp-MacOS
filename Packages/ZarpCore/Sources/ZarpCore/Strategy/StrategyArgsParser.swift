@@ -82,11 +82,13 @@ public enum StrategyArgsParser {
     }
 
     /// `"blob=quic_google"`, `"repeats=6"`, `"badsum"` -> map; bare flags get an empty value.
+    /// A parameter given twice is malformed (`nil`), not silently resolved to whichever came last.
     private static func parseParams(_ items: [String]) -> [String: String]? {
         var out: [String: String] = [:]
         for item in items {
             guard !item.isEmpty else { return nil }
             let (k, v) = splitOnce(item, on: "=")
+            guard out[k] == nil else { return nil }
             out[k] = v
         }
         return out
@@ -99,7 +101,13 @@ public enum StrategyArgsParser {
     private static func parseFake(_ p: [String: String]) -> FakeStep? {
         guard Set(p.keys).subtracting(fakeKeys).isEmpty else { return nil }
         guard let blobKey = p["blob"], let blob = Blob.byKey(blobKey) else { return nil }
-        let repeats = p["repeats"].flatMap(Int.init) ?? 1
+        // A present-but-unreadable value ("repeats=6x", "repeats=") is an error, not "1": the
+        // strategy would otherwise run — and be scored — as something the user didn't write.
+        var repeats = 1
+        if let text = p["repeats"] {
+            guard let value = Int(text) else { return nil }
+            repeats = value
+        }
         guard (1...maxRepeats).contains(repeats) else { return nil }
         var ttl: Int?, ttl6: Int?
         if let s = p["ip_ttl"] { guard let v = Int(s) else { return nil }; ttl = v }
@@ -117,6 +125,12 @@ public enum StrategyArgsParser {
         if !extra.isEmpty { return Msg("strategy.unknownFeature", "fake:" + extra.sorted().joined(separator: ":")) }
         guard let blobKey = p["blob"] else { return Msg("strategy.badSyntax", "fake needs blob=") }
         guard Blob.byKey(blobKey) != nil else { return Msg("strategy.badSyntax", "unknown blob '\(blobKey)'") }
+        if let text = p["repeats"], Int(text) == nil {
+            return Msg("strategy.badSyntax", "repeats='\(text)' is not a whole number")
+        }
+        if let text = p["repeats"], let n = Int(text), !(1...maxRepeats).contains(n) {
+            return Msg("strategy.badSyntax", "repeats must be 1-\(maxRepeats)")
+        }
         return Msg("strategy.badSyntax", "bad fake parameters")
     }
 

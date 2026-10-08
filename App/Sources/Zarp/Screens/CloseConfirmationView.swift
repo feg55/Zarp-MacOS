@@ -7,13 +7,9 @@ import ZarpCore
 /// the choice is written straight to `AppSettings.minimizeToMenuBar` and this sheet stops
 /// appearing (Windows' exact rule).
 ///
-/// UNVERIFIED: not rendered on a real display (see `Theme.swift`'s note). Also unverified: the
-/// wiring that is supposed to *trigger* this sheet. Windows intercepts the titlebar close button
-/// via `Form.OnFormClosing`; the AppKit equivalent is an `NSWindow` delegate's
-/// `windowShouldClose(_:)`, which SwiftUI's `Window`/`WindowGroup` scenes don't expose directly.
-/// `ZarpApp.swift` currently only reaches this sheet from the menu bar's Quit item — hooking the
-/// real titlebar close button needs an `NSWindowDelegate` obtained via an `NSViewRepresentable`
-/// or similar, on a real Mac, which is out of scope until the app actually runs somewhere.
+/// Reached from the titlebar close button (via `ZarpApp.swift`'s `WindowCloseInterceptor`, the
+/// AppKit `windowShouldClose(_:)` hook SwiftUI's `Window` scene doesn't expose), ⌘Q, and the menu
+/// bar's Exit item alike.
 struct CloseConfirmationView: View {
     let localization: Localization
     let disconnectOnExit: Bool

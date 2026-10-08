@@ -46,11 +46,17 @@ public enum IPAddress: Hashable, Sendable {
             guard parts.count == 4 else { return nil }
             var value: UInt32 = 0
             for p in parts {
-                guard !p.isEmpty, p.count <= 3, let n = UInt32(p), n <= 255 else { return nil }
+                // Plain ASCII digits only: UInt32("+5") parses, and so would "+1.+2.+3.+4".
+                guard !p.isEmpty, p.count <= 3, p.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }),
+                      let n = UInt32(p), n <= 255 else { return nil }
                 value = value << 8 | n
             }
             self = .v4(value)
         }
+    }
+
+    private static func isHexDigit(_ b: UInt8) -> Bool {
+        (b >= 0x30 && b <= 0x39) || (b >= 0x41 && b <= 0x46) || (b >= 0x61 && b <= 0x66)
     }
 
     private static func parseV6(_ text: String) -> [UInt8]? {
@@ -60,7 +66,8 @@ public enum IPAddress: Hashable, Sendable {
             if s.isEmpty { return [] }
             var out: [UInt16] = []
             for g in s.split(separator: ":", omittingEmptySubsequences: false) {
-                guard !g.isEmpty, g.count <= 4, let v = UInt16(g, radix: 16) else { return nil }
+                guard !g.isEmpty, g.count <= 4, g.utf8.allSatisfy({ isHexDigit($0) }),
+                      let v = UInt16(g, radix: 16) else { return nil }
                 out.append(v)
             }
             return out

@@ -43,12 +43,43 @@ func (p *Pump) Run() error {
 	return <-p.errs
 }
 
+// deviceWriter writes IP packets into the utun from one goroutine, reusing its scratch buffer
+// (the device needs the packet behind a 4-byte header, so a copy is unavoidable — allocating a
+// fresh one per packet is not).
+type deviceWriter struct {
+	dev  tun.Device
+	buf  []byte
+	bufs [][]byte
+}
+
+func newDeviceWriter(dev tun.Device, mtu int) *deviceWriter {
+	return &deviceWriter{dev: dev, buf: make([]byte, headroom+mtu+64), bufs: make([][]byte, 1)}
+}
+
+func (w *deviceWriter) write(pkt []byte) error {
+	need := headroom + len(pkt)
+	if need > cap(w.buf) {
+		w.buf = make([]byte, need)
+	}
+	buf := w.buf[:need]
+	copy(buf[headroom:], pkt)
+	w.bufs[0] = buf
+	n, err := w.dev.Write(w.bufs, headroom)
+	if err == nil && n != 1 {
+		return errors.New("short write to utun")
+	}
+	return err
+}
+
 // pumpDeviceToSession reads packets the kernel routes into the utun and forwards them into the
 // MASQUE session.
 func (p *Pump) pumpDeviceToSession() {
 	bufs := make([][]byte, 1)
 	bufs[0] = make([]byte, headroom+p.mtu+64) // slack for any header growth
 	sizes := make([]int, 1)
+	// ICMP errors the session wants delivered back to the local stack (packet too big, ...) are
+	// written from this goroutine, so they get their own writer — the other direction has one too.
+	icmpOut := newDeviceWriter(p.dev, p.mtu)
 	for {
 		n, err := p.dev.Read(bufs, sizes, headroom)
 		if err != nil {
@@ -62,7 +93,7 @@ func (p *Pump) pumpDeviceToSession() {
 				return
 			}
 			if len(icmp) > 0 {
-				if werr := p.writeToDevice(icmp); werr != nil {
+				if werr := icmpOut.write(icmp); werr != nil {
 					log.Printf("tunnel: writing ICMP response to utun: %v", werr)
 				}
 			}
@@ -73,25 +104,16 @@ func (p *Pump) pumpDeviceToSession() {
 // pumpSessionToDevice reads packets the MASQUE session delivers (real internet traffic coming
 // back through WARP) and writes them into the utun so the kernel delivers them locally.
 func (p *Pump) pumpSessionToDevice() {
+	out := newDeviceWriter(p.dev, p.mtu)
 	for {
 		pkt, err := p.session.IPConn.ReadPacketZeroCopy(true)
 		if err != nil {
 			p.errs <- fmt.Errorf("connect-ip read: %w", err)
 			return
 		}
-		if err := p.writeToDevice(pkt); err != nil {
+		if err := out.write(pkt); err != nil {
 			p.errs <- fmt.Errorf("utun write: %w", err)
 			return
 		}
 	}
-}
-
-func (p *Pump) writeToDevice(pkt []byte) error {
-	buf := make([]byte, headroom+len(pkt))
-	copy(buf[headroom:], pkt)
-	n, err := p.dev.Write([][]byte{buf}, headroom)
-	if err == nil && n != 1 {
-		return errors.New("short write to utun")
-	}
-	return err
 }

@@ -1,18 +1,13 @@
 import AppKit
 import SwiftUI
 import ZarpCore
+import ZarpdIPC
 
-/// Settings window: strategies table on top, options below — same two-section layout as Windows
-/// Zarp's `SettingsForm` (`UI/SettingsForm.cs`), sized close to its 800×720 default with the same
-/// 760×700 minimum.
-///
-/// UNVERIFIED: not rendered on a real display (see `Theme.swift`'s note).
+/// Settings window: strategies table on top, the zarpd daemon's status, and options below — the
+/// same sections as Windows Zarp's `SettingsForm` (`UI/SettingsForm.cs`) plus the daemon panel,
+/// sized close to its 800×720 default with the same 760×700 minimum.
 struct SettingsView: View {
     @ObservedObject var vm: AppViewModel
-    /// TODO(real Mac): replace with `SMAppService.mainApp.status == .enabled` read on appear, and
-    /// `try SMAppService.mainApp.register()/.unregister()` on toggle — matching Windows
-    /// `Autostart.cs` / `SettingsForm`'s async re-check after toggling.
-    @State private var autostartEnabled = false
 
     var body: some View {
         ScrollView {
@@ -31,7 +26,10 @@ struct SettingsView: View {
         }
         .background(Theme.back)
         .frame(minWidth: 760, minHeight: 700)
-        .onAppear { vm.refreshDaemonState() }
+        .onAppear {
+            vm.refreshDaemonState()
+            vm.refreshAutostart()
+        }
     }
 
     // MARK: - zarpd daemon (Phase 8)
@@ -54,6 +52,13 @@ struct SettingsView: View {
             Text(daemonPingText)
                 .font(Theme.font(11.5))
                 .foregroundColor(Theme.textDim)
+
+            if vm.daemonStale, let ping = vm.daemonPing {
+                Text(vm.localization.string("daemon.stale", [ping.version, AppViewModel.appVersion]))
+                    .font(Theme.font(11))
+                    .foregroundColor(Theme.busy)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if let err = vm.daemonActionError {
                 Text(err)
@@ -121,10 +126,8 @@ struct SettingsView: View {
                                      isOn: Binding(get: { vm.settings.autoConnectOnStart },
                                                     set: { v in vm.updateSettings { $0.autoConnectOnStart = v } }))
                     ToggleSwitchView(title: vm.localization.string("opt.autostart"),
-                                     isOn: Binding(get: { autostartEnabled },
-                                                    set: { setAutostart($0) }))
-                        // TODO(real Mac): back this with SMAppService.mainApp, mirroring Windows
-                        // Autostart.cs / SettingsForm's async re-check after toggling.
+                                     isOn: Binding(get: { vm.autostartEnabled },
+                                                    set: { vm.setAutostart($0) }))
 
                     HStack(spacing: 10) {
                         Text(vm.localization.string("opt.onClose"))
@@ -144,9 +147,17 @@ struct SettingsView: View {
                     ToggleSwitchView(title: vm.localization.string("opt.disconnectOnExit"),
                                      isOn: Binding(get: { vm.settings.disconnectOnExit },
                                                     set: { v in vm.updateSettings { $0.disconnectOnExit = v } }))
-                    ToggleSwitchView(title: vm.localization.string("opt.restrict"),
-                                     isOn: Binding(get: { vm.settings.restrictToWarpAddresses },
-                                                    set: { v in vm.updateSettings { $0.restrictToWarpAddresses = v } }))
+                    ToggleSwitchView(title: vm.localization.string("opt.routeAll"),
+                                     isOn: Binding(get: { vm.settings.routeAllTraffic },
+                                                    set: { v in vm.updateSettings { $0.routeAllTraffic = v } }))
+                        .help(vm.localization.string("opt.routeAllTip"))
+                    ToggleSwitchView(title: vm.localization.string("opt.overrideDNS"),
+                                     isOn: Binding(get: { vm.settings.overrideDNS && vm.settings.routeAllTraffic },
+                                                    set: { v in vm.updateSettings { $0.overrideDNS = v } }),
+                                     isEnabled: vm.settings.routeAllTraffic)
+                    ToggleSwitchView(title: vm.localization.string("opt.reconnect"),
+                                     isOn: Binding(get: { vm.settings.reconnectOnLoss },
+                                                    set: { v in vm.updateSettings { $0.reconnectOnLoss = v } }))
                     ToggleSwitchView(title: vm.localization.string("opt.isolate"),
                                      isOn: Binding(get: { vm.settings.isolateTests },
                                                     set: { v in vm.updateSettings { $0.isolateTests = v } }))
@@ -167,7 +178,7 @@ struct SettingsView: View {
 
                     HStack(spacing: 8) {
                         actionButton(vm.localization.string("btn.dataFolder")) { openDataFolder() }
-                        actionButton(vm.localization.string("btn.licenses")) { openLicenses() }
+                        actionButton(vm.localization.string("btn.licenses")) { vm.revealLicenses() }
                     }
 
                     Text("Zarp \(appVersion)")
@@ -208,29 +219,11 @@ struct SettingsView: View {
         )
     }
 
-    // MARK: - Actions with a real, if unverified, platform implementation
-
-    private func setAutostart(_ enabled: Bool) {
-        autostartEnabled = enabled
-    }
+    // MARK: - Actions
 
     private func openDataFolder() {
-        NSWorkspace.shared.activateFileViewerSelecting([dataDirectory()])
+        NSWorkspace.shared.activateFileViewerSelecting([AppViewModel.dataDirectory()])
     }
 
-    private func openLicenses() {
-        // TODO(real Mac): write THIRD_PARTY_NOTICES equivalent into the data folder like Windows
-        // Zarp's Licenses.Extract, then reveal it. For now just opens the data folder.
-        openDataFolder()
-    }
-
-    private func dataDirectory() -> URL {
-        (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))?
-            .appendingPathComponent("Zarp", isDirectory: true)
-            ?? FileManager.default.temporaryDirectory
-    }
-
-    private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-    }
+    private var appVersion: String { AppViewModel.appVersion }
 }

@@ -147,7 +147,8 @@ func (c *desyncConn) Write(b []byte) (int, error) {
 	}
 	prev := 0
 	written := 0
-	for i, end := range append(parts, len(b)) {
+	ends := append(parts, len(b))
+	for i, end := range ends {
 		seg := b[prev:end]
 		if i == 0 && c.spec.Mode == DesyncDisorder {
 			if err := c.writeLowTTL(seg); err != nil {
@@ -158,7 +159,9 @@ func (c *desyncConn) Write(b []byte) (int, error) {
 		}
 		written += len(seg)
 		prev = end
-		time.Sleep(time.Millisecond) // give the kernel a chance to emit each piece as its own segment
+		if i < len(ends)-1 {
+			time.Sleep(time.Millisecond) // give the kernel a chance to emit each piece as its own segment
+		}
 	}
 	return written, nil
 }

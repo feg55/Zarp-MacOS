@@ -19,8 +19,9 @@ private struct StrategyRow: Identifiable {
 /// `SettingsForm` (`UI/SettingsForm.cs`'s column setup and `FillList`) and the attached screenshot
 /// of that window — same column order and widths, same ✔ / ✔✔ convention, same row density.
 ///
-/// Backed by real networking as of `zarpd`/`ZarpdClient` (docs/ARCHITECTURE.md §9.4) — rows read
-/// "not tested" only until a real Test/Use/scan runs, not as a permanent placeholder state.
+/// Backed by real networking through `zarpd`/`ZarpdClient` (docs/ARCHITECTURE.md §9.4) — rows read
+/// "not tested" until a Test/Use/scan runs. Strategies this port cannot perform (raw-socket tricks,
+/// WireGuard) read "not available on macOS" with the reason as a tooltip, and are never attempted.
 struct StrategiesView: View {
     @ObservedObject var vm: AppViewModel
     @State private var selection = Set<String>()
@@ -40,7 +41,7 @@ struct StrategiesView: View {
 
             HStack(spacing: 8) {
                 actionButton(vm.localization.string("btn.use"), primary: true,
-                             enabled: selection.count == 1 && !vm.isBusy, action: useSelected)
+                             enabled: selection.count == 1 && !vm.isBusy && !selectionIsUnsupported, action: useSelected)
                 actionButton(vm.localization.string("btn.testSelected"),
                              enabled: !selection.isEmpty && !vm.isBusy, action: testSelected)
                 if vm.isBusy {
@@ -73,6 +74,19 @@ struct StrategiesView: View {
     private var rows: [StrategyRow] {
         vm.strategies.map { s in
             let result = vm.results[s.id]
+            if let reason = s.unsupportedReason {
+                // Never attempted, so never a result: say plainly that this port can't do it, and
+                // why (tooltip) — instead of a "not tested" that suggests pressing Test would help.
+                return StrategyRow(
+                    strategy: s,
+                    isCurrent: false,
+                    resultText: vm.localization.string("result.unavailable"),
+                    resultColor: Theme.textDisabled,
+                    connectText: "",
+                    pingText: "",
+                    tooltip: reason.text(using: vm.localization)
+                )
+            }
             let (text, color) = Self.resultCell(result, using: vm.localization)
             return StrategyRow(
                 strategy: s,
@@ -84,6 +98,12 @@ struct StrategiesView: View {
                 tooltip: s.requiresDesync ? s.args : vm.localization.string("settings.directTip")
             )
         }
+    }
+
+    /// The single selected strategy is one this port can't run (so "Use" would only fail).
+    private var selectionIsUnsupported: Bool {
+        guard selection.count == 1, let id = selection.first, let s = vm.strategies.first(where: { $0.id == id }) else { return false }
+        return s.unsupportedReason != nil
     }
 
     private var table: some View {
@@ -139,10 +159,6 @@ struct StrategiesView: View {
         .background(Theme.panel)
         .scrollContentBackground(.hidden)
         .frame(minHeight: 260, idealHeight: 320)
-        // TODO(real Mac): confirm double-click-to-use works through Table's built-in gesture
-        // handling here, or whether it needs an NSViewRepresentable escape hatch — Windows'
-        // ListView exposes DoubleClick directly, SwiftUI's Table does not have a documented
-        // equivalent as of this writing.
     }
 
     /// Same rule as Windows `SettingsForm.FillList`: not tested (dim) · works ✔✔ (ok, confirmed)
@@ -177,15 +193,16 @@ struct StrategiesView: View {
 
 /// Windows Zarp opens `strategies.txt` in Notepad (`SettingsForm.OpenCustomFile`) and reloads the
 /// catalog when the user closes it. This sheet is the SwiftUI-native equivalent: an editable text
-/// view over the same file content, saved back on close.
-///
-/// TODO(real Mac): wire `vm.settings`/a dedicated file URL for `strategies.txt` in through the
-/// view model rather than reading the template text below — this currently only round-trips
-/// in-memory text for the session, it does not persist to disk yet.
+/// view over the real file — loaded when the sheet opens, written back by Save (which also reloads
+/// the strategy list), and left untouched by Cancel. Malformed lines are reported right after saving,
+/// so a typo isn't discovered later as a strategy that silently isn't there.
 private struct CustomStrategiesSheet: View {
     @ObservedObject var vm: AppViewModel
     @Binding var isPresented: Bool
-    @State private var text: String = CustomStrategyFile.template
+    @State private var text = ""
+    @State private var loaded = false
+    @State private var skippedLines: [String] = []
+    @State private var saveError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -199,16 +216,55 @@ private struct CustomStrategiesSheet: View {
                 .background(Theme.panel)
                 .frame(minWidth: 520, minHeight: 320)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border, lineWidth: 1))
+                .disabled(!loaded)
+            if let saveError {
+                Text(saveError)
+                    .font(Theme.font(11))
+                    .foregroundColor(Theme.bad)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !skippedLines.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(vm.localization.string("custom.skipped", [String(skippedLines.count)]))
+                        .font(Theme.font(11))
+                        .foregroundColor(Theme.busy)
+                    ForEach(skippedLines, id: \.self) { line in
+                        Text(line)
+                            .font(Theme.monospaced(10.5))
+                            .foregroundColor(Theme.textDim)
+                            .lineLimit(1)
+                    }
+                }
+            }
             HStack {
                 Spacer()
                 actionButton(vm.localization.string("btn.cancel")) { isPresented = false }
-                actionButton(vm.localization.string("btn.close"), primary: true) {
-                    isPresented = false
-                    vm.reloadCustomStrategies()
-                }
+                actionButton(vm.localization.string("btn.save"), primary: true, enabled: loaded, action: save)
             }
         }
         .padding(20)
         .background(Theme.back)
+        .task {
+            guard !loaded else { return }
+            text = await vm.customStrategiesText()
+            loaded = true
+        }
+    }
+
+    private func save() {
+        Task {
+            switch await vm.saveCustomStrategies(text) {
+            case .success(let skipped):
+                if skipped.isEmpty {
+                    isPresented = false
+                } else {
+                    // Saved, but some lines were not understood: keep the sheet open to show which.
+                    skippedLines = skipped
+                    saveError = nil
+                }
+            case .failure(let error):
+                saveError = vm.localization.string("custom.saveFailed", [CustomStrategyFile.fileName, error.localizedDescription])
+            }
+        }
     }
 }

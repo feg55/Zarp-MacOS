@@ -543,6 +543,92 @@ deliberately allowed. Path classification is a pure function in ZarpCore with un
 - **`zarpd` isn't signed with the hardened runtime or a secure timestamp** — irrelevant while
   unnotarized, a prerequisite if a Developer ID ever becomes available.
 
+## Phase 10 — whole-project review: fixes and the full tunnel — written 2026-10-06, real-network verified 2026-10-08 (56/56)
+
+A line-by-line review of the whole project (Swift, Go, scripts, docs) found four serious problems and
+about twenty smaller ones; this phase is the fix for all of them. **What was verified, and how, is
+stated per item — nothing here is claimed to work on a real network until `scripts/test-integration.sh`
+has been run by someone with the VPN off.**
+
+### The serious ones
+
+1. **"Connected" only routed `1.1.1.1`** (Phase 7 scope, but the UI and DMG presented it as a finished
+   VPN). A persistent connection is now a *full tunnel*: `0/1` + `128/1` (+ IPv6 `::/1` + `8000::/1`) bound
+   to the utun, DNS overridden with a crash-safe backup (ARCHITECTURE.md §11). The settings toggle "Route
+   all traffic through WARP" turns it off (diagnostic mode, labelled as such in the status line).
+   *Verified: unit tests of the exact commands, their order, rollback on failure, DNS backup/restore and
+   crash recovery against a fake system. **Real Mac, 2026-10-08: verified by `scripts/test-integration.sh`
+   after one fix (the endpoint exclusion route, see "Known limits" below).***
+2. **Five strategies ran as plain direct connections** and were scored "works ✔✔": the parser flagged
+   `badsum`/`tcp_md5`/`seqovl`/`badseq`/`hostfakesplit` via `parseIssue`, but nothing consumed it, so the
+   client sent an empty plan. Strategies the port can't perform (those five and WireGuard) are now
+   `unsupported` with a reason, never sent to the daemon, shown as "not available on macOS", and results an
+   older build saved for them are dropped on load. *Verified by unit tests, including a probe that showed the
+   old behavior before the fix.*
+3. **An orphaned connection in the daemon blocked every later connect** (shared host route → `File exists`),
+   caused by a GUI crash/Dock-quit mid-scan, a failed `measure` after `open`, or a swallowed `close`. The
+   daemon now keeps one tunnel at a time (a new `open` supersedes), leases test connections, aborts an
+   `open` whose client left, and the engine closes every handle on every path and disconnects before a
+   scan. *Verified by unit tests (mutation-checked: removing each guard fails a test) and, for the daemon
+   binary, a real run of validation + failed dials.*
+4. **A UDP socket leaked on every failed H3 dial** (quic-go's `Transport.Close` leaves a caller-supplied
+   socket open). `DialH3` now owns the socket on every path; `Session` closes its transport. *Verified
+   by a regression test (failed against the old code) and a real daemon run: 15 failed dials, fd count
+   unchanged.*
+
+### The rest
+
+Dead tunnel shown as connected (the daemon tears it down and reports the loss, the app polls every 4 s,
+reconciles, and optionally reconnects quietly); cancellation honored by every operation; stale-answer races
+in adopt/reconcile (epoch guard); "isolate tests" now really rotates endpoints (Windows Zarp's pool);
+registration only after the user accepts Cloudflare's terms (no more registration at daemon start); IPC
+hardening (peer credential check, validation, limits, panic recovery); install only from `/Applications`
+in release builds; stale-daemon detection and one automatic restart; measurement no longer reuses a
+connection from a previous tunnel; SIGPIPE/NSException crash risks; settings no longer reset by a schema
+change (and a corrupt file is kept aside); daemon logs in the app's log; the custom-strategies editor and
+the autostart / auto-connect / licenses controls now actually work; the foreign-VPN check is real; the
+spinner no longer redraws forever; and a long list of small parsing/formatting fixes.
+
+### Testing
+
+`go test -race ./...` (daemon, IPC, routes, DNS, tunnel, warp — including TTL-on-the-wire and
+socket-leak checks on loopback), `swift test` in `Packages/ZarpCore` (engine scenarios incl. cancellation
+and re-entrancy, settings, logging, parsing). `scripts/package.sh` runs both before it builds an installer.
+`scripts/test-integration.sh` is the real-network, real-root test (see its header); run it with every other
+VPN **off**.
+
+### Known limits (stated, not hidden)
+
+- Real-network history (`scripts/test-integration.sh`, VPN off, Wi-Fi, 2026-10-08):
+  - **Run 1:** 26 passed, 5 failed, 1 skipped. Narrow test connections, validation, the file-descriptor fix
+    (11 → 11 across 15 failed dials), orphan takeover and lease reaping all worked; the **full tunnel died
+    immediately** — `IP_BOUND_IF` alone does not keep the control socket off the `/1` routes
+    (`ENETUNREACH`, `ARCHITECTURE.md` §9.3). Fixed with a journaled endpoint exclusion route
+    (`zarpd/route/exclusion.go`).
+  - **Run 2:** 56 passed, 0 failed, 0 skipped, machine state OK. Covers the full tunnel (IPv4 + IPv6
+    traffic on WARP, 8 MB download at ~0.97 MB/s, example.com 200), the DNS override and its exact restore,
+    the endpoint host route in the routing table, disconnect cleanup, `kill -9` (routes vanish, host route
+    and DNS recovered at the next start) and SIGTERM.
+  - Not covered by the script, so still unverified: sleep/wake and Wi-Fi roaming with a live tunnel,
+    another interface becoming primary, the installed LaunchDaemon + app path (the script runs its own
+    daemon), and the HTTP/2 transport with `--h2` on this network.
+- The daemon logs `dropping proxied packet … Hop Limit / TTL too small: 1` for packets the tunnel carries
+  with TTL 1 (link-local/multicast chatter, probes); connect-ip refuses to proxy them. Harmless, seen in
+  the run-2 log, about one a second. The daemon now logs the first and then at most one per 30 s with a
+  count of the rest (`cmd/zarpd/lognoise.go`), so they cannot flood the ring the app reads.
+- The endpoint exclusion points at the gateway that was current when the tunnel opened; if the machine
+  changes network while connected the tunnel is lost anyway and the route is removed with it.
+- DNS override and routes are applied for the physical interface's *network service*; if the machine
+  moves to another interface while connected, the tunnel is lost and reconnected, and DNS follows then.
+- Private-network ranges (10/8, 172.16/12, 192.168/16) not directly attached are sent into the tunnel like
+  everything else (no split-tunnel exclusions yet).
+- After sleep/wake or a network change, traffic can stall for up to ~30 s (QUIC's idle timeout) while the
+  full-tunnel routes still point into a session that has silently died; only then is the tunnel noticed as
+  dead, torn down (traffic goes direct again) and reconnected.
+- Daemon log history older than the daemon's 1000-line ring (or from before the app started) is not
+  replayed into the app's log.
+- Only IPv4 WARP endpoints are dialed (IPv6 *traffic* is tunnelled; the control connection is IPv4).
+
 ## Risks
 
 | Risk | Impact | Mitigation |

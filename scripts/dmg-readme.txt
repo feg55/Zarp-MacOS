@@ -19,12 +19,18 @@ English
    "Zarp" was blocked to protect your Mac: click "Open Anyway", confirm with your password or Touch
    ID, then click Open. (On macOS 15 the older Control-click > Open shortcut no longer works.)
 
-4. In Zarp, click the gear icon, find the "zarpd daemon" section and click Install. macOS shows a
+4. In Zarp, click the gear icon, find the "zarpd daemon" section and click Install (this only works
+   when Zarp is in the Applications folder). macOS shows a
    "background items added" notification: open System Settings > General > Login Items &
    Extensions and switch Zarp on under "Allow in the Background" (password or Touch ID). This is
    needed only once.
 
-5. Press the big power button. Zarp finds a strategy that works on your network and connects.
+5. Turn off any other VPN (Zarp refuses to build a tunnel on top of one), then press the big power
+   button. The first time, Zarp asks to create a free anonymous Cloudflare WARP account for this Mac
+   and to accept Cloudflare's terms for you. It then finds a strategy that works on your network and
+   connects: while it says "Connected", ALL of this Mac's traffic (and DNS) goes through WARP.
+   Settings has switches for that ("Route all traffic through WARP", "Use Cloudflare DNS"); if the
+   connection ever drops, Zarp reconnects by itself.
 
 If step 3 does not offer "Open Anyway", this Terminal command removes the block instead:
     xattr -dr com.apple.quarantine /Applications/Zarp.app
@@ -44,13 +50,18 @@ If step 3 does not offer "Open Anyway", this Terminal command removes the block 
    «Все равно открыть», подтвердите паролем или Touch ID, затем нажмите «Открыть». (В macOS 15
    прежний способ — Control-клик > «Открыть» — больше не работает.)
 
-4. В Zarp нажмите значок шестерёнки, найдите раздел «zarpd daemon» и нажмите Install. macOS покажет
+4. В Zarp нажмите значок шестерёнки, найдите раздел «Служба zarpd» и нажмите «Установить» (это
+   работает, только если Zarp лежит в папке «Программы»). macOS покажет
    уведомление о добавлении фоновых объектов: откройте «Системные настройки» > «Основные» >
    «Объекты входа и расширения» и включите Zarp в разделе «Разрешить в фоновом режиме» (пароль или
    Touch ID). Это нужно сделать только один раз.
 
-5. Нажмите большую кнопку питания. Zarp сам подберёт стратегию, которая работает в вашей сети, и
-   подключится.
+5. Выключите другой VPN (поверх него Zarp туннель не строит), затем нажмите большую кнопку питания.
+   В первый раз Zarp предложит создать бесплатный анонимный аккаунт Cloudflare WARP для этого Mac и от
+   вашего имени принять условия Cloudflare. Затем он сам подберёт стратегию, которая работает в вашей
+   сети, и подключится: пока написано «Подключено», ВЕСЬ трафик этого Mac (и DNS) идёт через WARP.
+   В настройках есть переключатели («Пускать весь трафик через WARP», «Использовать DNS Cloudflare»);
+   если соединение оборвётся, Zarp переподключится сам.
 
 Если на шаге 3 нет кнопки «Все равно открыть», снять блокировку можно командой в Терминале:
     xattr -dr com.apple.quarantine /Applications/Zarp.app

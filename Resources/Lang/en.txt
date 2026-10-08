@@ -5,10 +5,11 @@
 # Localization.languages.
 #
 # Vendored from Windows Zarp (MIT, github.com/feg55/Zarp, src/Zarp/Lang/*.txt) and now maintained
-# separately for this port. Only en.txt has been hand-edited so far (macOS wording, a handful of
-# new strategy-compatibility keys at the bottom); the other 7 files are still the verbatim Windows
-# text and will say things like "Windows Defender" or "tray" in a few spots until someone updates
-# their translations too — falling back to this file is exactly what covers that gap meanwhile.
+# separately for this port. en.txt and ru.txt are kept in step by hand (a test requires ru.txt to
+# define every key en.txt does, and that every key the code uses exists in both). The other six
+# files are still the verbatim Windows text: they say things like "Windows Defender" or "tray" in a
+# few spots and lack the keys added for macOS — falling back to this file is exactly what covers
+# that gap until someone updates their translations.
 #
 # A large block of keys below (zapret2 install/update, WinDivert, Windows Defender exclusions,
 # winws2 process errors) describes Windows Zarp's bundled backend, which this port does not have:
@@ -34,7 +35,7 @@ status.disconnected = Disconnected
 
 hint.cancel = Press the button to cancel
 hint.disconnect = Press to disconnect
-hint.firstRun = Press it and Zarp will find the fastest zapret2 strategy and connect WARP
+hint.firstRun = Press it and Zarp will find the fastest strategy that works on your network and connect WARP
 hint.connect = Press to connect. You can change the strategy in settings ⚙
 
 tray.open = Open
@@ -48,7 +49,7 @@ tray.bgText = It lives in the menu bar now. To quit: click the icon → Exit.
 
 # ---- dialogs
 dlg.antivirus = The antivirus (usually Windows Defender) blocked the zapret2 files.\n\nThis is a known false positive for the WinDivert driver that zapret uses to intercept traffic.\n\nAdd the folder to Windows Defender exclusions and try again?\n\n{0}
-dlg.vpn = Another VPN is on:\n\n{0}\n\nWARP traffic will go through it and zapret won't affect it: WARP may fail to connect and the chosen strategy will be wrong.\n\nIt's better to turn this VPN off. Continue anyway?
+dlg.vpn = Another VPN is on:\n\n{0}\n\nZarp's WARP connection would go through it (or fight it for the same routes), so a scan would measure the wrong thing and a full tunnel could not be set up.\n\nIt's better to turn this VPN off. Continue anyway?
 dlg.defender = Add the zapret2 folder to Windows Defender exclusions?\n\n{0}
 dlg.otherCopy = Another copy of Zarp is already running:\n\n{0}\n\nClose it and open this one? If WARP is connected, Zarp will reconnect it.
 dlg.otherCopies = Other copies of Zarp are already running:\n\n{0}\n\nClose them and open this one? If WARP is connected, Zarp will reconnect it.
@@ -99,9 +100,7 @@ opt.closeTray = Hide to menu bar
 opt.closeExit = Exit the app
 opt.closeAccessible = Action when the window is closed
 opt.disconnectOnExit = Disconnect WARP on exit
-opt.restrict = Intercept WARP addresses only
 opt.isolate = Isolate tests (new endpoint for each)
-opt.autoUpdate = Update zapret2 automatically
 opt.timeout = Connection timeout, s
 opt.stopAfter = Quick scan: working\nstrategies to find
 
@@ -229,3 +228,41 @@ daemon.restart = Restart
 daemon.uninstall = Uninstall
 daemon.openSettings = Open System Settings…
 daemon.refresh = Refresh
+
+# ---- macOS additions: connection state, strategies this port cannot run, WARP account
+detail.connectionLost = Connection lost
+detail.termsDeclined = Cloudflare's terms were not accepted
+detail.unsupported = This strategy is not available on macOS
+detail.strategyTestRoute = Strategy: {0} (test route only: other traffic does not use WARP)
+log.connectionLost = The WARP connection was lost: {0}
+log.reconnecting = Reconnecting ({0}/{1}) with "{2}"...
+log.reconnectGiveUp = Could not reconnect automatically. Press the button to connect again.
+log.unsupportedStrategy = "{0}" is not available on macOS: {1}
+log.customSaveFailed = Could not save {0}: {1}
+err.daemonGone = the zarpd service stopped responding
+err.unknownLoss = the tunnel disappeared (no reason was reported)
+err.foreignVpn = Another VPN or proxy owns the default route. Turn it off, then connect again.
+err.noAccount = No WARP account is registered yet.
+strategy.wgUnsupported = WireGuard is not supported on macOS yet
+result.unavailable = not available on macOS
+
+# ---- macOS additions: dialogs
+dlg.vpnContinue = Continue anyway
+dlg.termsTitle = Cloudflare WARP account
+dlg.terms = Zarp needs a Cloudflare WARP account to connect.\n\nIt will create an anonymous one for this Mac and accept Cloudflare's WARP Terms of Service (cloudflare.com/application/terms) on your behalf. No personal information is sent.\n\nContinue?
+dlg.termsAccept = Accept and continue
+
+# ---- macOS additions: menu bar, options, editor
+tray.quit = Quit Zarp
+opt.routeAll = Route all traffic through WARP
+opt.routeAllTip = Off: only a test route is tunnelled (a diagnostic mode); everything else bypasses WARP
+opt.overrideDNS = Use Cloudflare DNS while connected
+opt.reconnect = Reconnect automatically if the connection drops
+btn.save = Save
+custom.skipped = Saved. {0} line(s) were not understood and skipped (format: Name | h3/h2/wg | args):
+custom.saveFailed = Could not save {0}: {1}
+
+# ---- macOS additions: the zarpd background service
+daemon.badLocationApplications = Zarp can only install its background service when it is in the Applications folder, because that service runs with administrator rights and must not live somewhere ordinary programs can modify. Drag Zarp into the Applications folder, open it from there, then click Install again.
+daemon.stale = The running service is version {0}, but this app is {1}. Press Restart to update it.
+daemon.restartingStale = The zarpd service is version {0} but the app is {1}: restarting the service to update it.
