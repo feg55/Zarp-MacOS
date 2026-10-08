@@ -1,7 +1,7 @@
 # Zarp: русский. Ключи совпадают с en.txt.
 
 # ---- главное окно
-main.subtitle = Cloudflare WARP поверх zapret2
+main.subtitle = Cloudflare WARP для сетей, где он заблокирован
 main.settingsTip = Настройки и выбор стратегии
 main.languageTip = Язык
 main.logShow = Журнал ▾
@@ -17,7 +17,7 @@ status.disconnected = Отключено
 
 hint.cancel = Нажмите на кнопку, чтобы отменить
 hint.disconnect = Нажмите, чтобы отключиться
-hint.firstRun = Нажмите, и Zarp сам найдёт самую быструю стратегию zapret2 и подключит WARP
+hint.firstRun = Нажмите, и Zarp сам найдёт самую быструю стратегию для вашей сети и подключит WARP
 hint.connect = Нажмите, чтобы подключиться. Стратегию можно сменить в настройках ⚙
 
 tray.open = Открыть
@@ -31,7 +31,7 @@ tray.bgText = Иконка в трее. Чтобы выйти совсем: пр
 
 # ---- диалоги
 dlg.antivirus = Антивирус (обычно Защитник Windows) заблокировал файлы zapret2.\n\nЭто известное ложное срабатывание на драйвер WinDivert, которым zapret перехватывает трафик.\n\nДобавить папку в исключения Защитника Windows и повторить?\n\n{0}
-dlg.vpn = Включён другой VPN:\n\n{0}\n\nТрафик WARP пойдёт через него, и zapret на него не повлияет: WARP может не подключиться, а подобранная стратегия будет неверной.\n\nЛучше выключить этот VPN. Всё равно продолжить?
+dlg.vpn = Включён другой VPN:\n\n{0}\n\nПодключение Zarp к WARP пойдёт через него (или будет конфликтовать с ним за одни и те же маршруты): поиск стратегии измерит не то, а полный туннель не удастся настроить.\n\nЛучше выключить этот VPN. Всё равно продолжить?
 dlg.defender = Добавить папку zapret2 в исключения Защитника Windows?\n\n{0}
 dlg.otherCopy = Уже запущена другая копия Zarp:\n\n{0}\n\nЗакрыть её и открыть эту? Если WARP подключён, Zarp переподключит его сам.
 dlg.otherCopies = Уже запущены другие копии Zarp:\n\n{0}\n\nЗакрыть их и открыть эту? Если WARP подключён, Zarp переподключит его сам.
@@ -82,9 +82,7 @@ opt.closeTray = Скрывать в трей
 opt.closeExit = Закрывать приложение
 opt.closeAccessible = Действие при закрытии окна
 opt.disconnectOnExit = Отключать WARP при выходе
-opt.restrict = Перехватывать только адреса WARP
 opt.isolate = Изолировать тесты (новый эндпоинт на каждый)
-opt.autoUpdate = Обновлять zapret2 автоматически
 opt.timeout = Ожидание подключения, с
 opt.stopAfter = Быстрый поиск: сколько\nрабочих найти
 
@@ -186,3 +184,60 @@ log.autostartFailed = Не удалось изменить автозапуск:
 log.licenseFailed = Не удалось записать лицензию {0}: {1}
 log.configBroken = Настройки повреждены, используются значения по умолчанию: {0}
 log.configSaveFailed = Не удалось сохранить настройки: {0}
+
+# ---- macOS: состояние подключения, недоступные стратегии, аккаунт WARP
+detail.connectionLost = Соединение потеряно
+detail.termsDeclined = Условия Cloudflare не приняты
+detail.unsupported = Эта стратегия недоступна на macOS
+detail.strategyTestRoute = Стратегия: {0} (только тестовый маршрут: остальной трафик идёт мимо WARP)
+log.connectionLost = Соединение с WARP потеряно: {0}
+log.reconnecting = Переподключение ({0}/{1}), стратегия «{2}»...
+log.reconnectGiveUp = Не удалось переподключиться автоматически. Нажмите кнопку, чтобы подключиться снова.
+log.unsupportedStrategy = «{0}» недоступна на macOS: {1}
+log.customSaveFailed = Не удалось сохранить {0}: {1}
+err.daemonGone = служба zarpd перестала отвечать
+err.unknownLoss = туннель исчез (причина не сообщена)
+err.foreignVpn = Другой VPN или прокси управляет маршрутом по умолчанию. Выключите его и подключитесь снова.
+err.noAccount = Аккаунт WARP ещё не зарегистрирован.
+strategy.wgUnsupported = WireGuard пока не поддерживается на macOS
+strategy.directH2 = Без обхода по HTTP/2 (прямое подключение)
+strategy.badSyntax = {0}
+strategy.unknownFeature = требует больше, чем фейк-пакет или обычное разделение TCP ({0}) — пока недоступно на macOS
+strategy.badsum = требует подмены контрольной суммы через raw-сокеты — пока недоступно на macOS
+result.unavailable = недоступно на macOS
+
+# ---- macOS: диалоги
+dlg.vpnContinue = Всё равно продолжить
+dlg.termsTitle = Аккаунт Cloudflare WARP
+dlg.terms = Для подключения Zarp нужен аккаунт Cloudflare WARP.\n\nZarp создаст для этого Mac анонимный аккаунт и от вашего имени примет Условия использования WARP от Cloudflare (cloudflare.com/application/terms). Личные данные не передаются.\n\nПродолжить?
+dlg.termsAccept = Принять и продолжить
+
+# ---- macOS: меню в строке меню, параметры, редактор
+tray.quit = Выйти из Zarp
+opt.routeAll = Пускать весь трафик через WARP
+opt.routeAllTip = Выключено: через туннель идёт только тестовый маршрут (диагностический режим), всё остальное идёт мимо WARP
+opt.overrideDNS = Использовать DNS Cloudflare при подключении
+opt.reconnect = Переподключаться автоматически при обрыве
+btn.save = Сохранить
+custom.skipped = Сохранено. Строк не распознано и пропущено: {0} (формат: Имя | h3/h2/wg | аргументы):
+custom.saveFailed = Не удалось сохранить {0}: {1}
+
+# ---- macOS: фоновая служба zarpd
+daemon.title = Служба zarpd
+daemon.notInstalled = Не установлена
+daemon.requiresApproval = Установлена — требуется разрешение в Системных настройках
+daemon.enabled = Установлена
+daemon.notFound = Не найдена — попробуйте переустановить Zarp
+daemon.unknown = Неизвестный статус ({0})
+daemon.respondingYes = Отвечает (версия {0}, pid {1})
+daemon.respondingNo = Не отвечает: {0}
+daemon.respondingUnknown = Проверка...
+daemon.badLocation = Zarp запущен с образа диска или из временной папки загрузки, и фоновая служба перестанет работать, как только они исчезнут. Перетащите Zarp в папку «Программы», извлеките образ диска, откройте Zarp из «Программ» и снова нажмите «Установить».
+daemon.badLocationApplications = Zarp устанавливает фоновую службу только из папки «Программы»: служба работает с правами администратора и не должна лежать там, где её может изменить обычная программа. Перетащите Zarp в папку «Программы», откройте его оттуда и снова нажмите «Установить».
+daemon.install = Установить
+daemon.restart = Перезапустить
+daemon.uninstall = Удалить
+daemon.openSettings = Открыть Системные настройки…
+daemon.refresh = Обновить
+daemon.stale = Работает служба версии {0}, а приложение версии {1}. Нажмите «Перезапустить», чтобы обновить её.
+daemon.restartingStale = Служба zarpd версии {0}, а приложение версии {1}: перезапускаю службу, чтобы обновить её.

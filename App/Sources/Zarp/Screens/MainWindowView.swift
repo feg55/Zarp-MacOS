@@ -67,6 +67,13 @@ struct MainWindowView: View {
         .frame(width: 380)
         .background(Theme.back)
         .task { await vm.start() }
+        // The menu bar item's "Settings" entry only sets this flag: the Settings screen is this
+        // window's sheet.
+        .onChange(of: vm.settingsRequested) { _, requested in
+            guard requested else { return }
+            showingSettings = true
+            vm.settingsRequested = false
+        }
         .sheet(isPresented: $showingSettings) {
             SettingsView(vm: vm)
         }

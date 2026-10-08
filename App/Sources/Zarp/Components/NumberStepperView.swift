@@ -2,8 +2,6 @@ import SwiftUI
 
 /// "− value +" field instead of a system stepper, matching Windows Zarp's `NumberBox`
 /// (`UI/Controls.cs`).
-///
-/// UNVERIFIED: not rendered on a real display (see `Theme.swift`'s note).
 struct NumberStepperView: View {
     @Binding var value: Int
     let range: ClosedRange<Int>

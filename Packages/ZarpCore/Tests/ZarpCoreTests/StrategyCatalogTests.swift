@@ -64,10 +64,33 @@ final class StrategyCatalogTests: XCTestCase {
         XCTAssertTrue(all.last?.isCustom ?? false)
     }
 
-    func testEveryReadinessDefaultsToPendingRealMacVerification() {
-        // Nothing has run against real hardware yet — see StrategyReadinessRegistry's own doc comment.
-        for s in StrategyCatalog.builtIn {
-            XCTAssertEqual(s.readiness, .pendingRealMacVerification, s.id)
+    func testReadinessSaysWhichStrategiesTheDaemonCanActuallyRun() {
+        // Everything the daemon can execute: fake-packet sends (QUIC) and plain TCP splits (HTTP/2),
+        // plus the two direct controls. Everything else must be marked unsupported *with a reason*,
+        // because an unsupported strategy sent to the daemon anyway would run as a plain direct
+        // connection and be scored as if it had worked.
+        let supported = Set(StrategyCatalog.builtIn.filter { $0.readiness == .available }.map(\.id))
+        XCTAssertEqual(supported, [
+            "warp-q-google6", "warp-q-google3", "warp-q-vk6", "warp-q-google-vk", "warp-q-google10",
+            "warp-q-google-ttl", "warp-q-vk-ttl", "warp-t-split", "warp-t-disorder", "direct", "direct-h2",
+        ])
+        let unsupported = Set(StrategyCatalog.builtIn.filter { $0.unsupportedReason != nil }.map(\.id))
+        XCTAssertEqual(unsupported, [
+            "warp-q-google-bad", "warp-t-google-md5", "warp-t-seqovl", "warp-t-vk-seq", "warp-t-hostfake",
+            "warp-wg-google6", "warp-wg-stun", "warp-wg-vk10", "warp-wg-google-ttl",
+        ])
+        for s in StrategyCatalog.builtIn where s.unsupportedReason != nil {
+            XCTAssertNotEqual(s.unsupportedReason?.key, "", s.id)
+        }
+        XCTAssertEqual(StrategyCatalog.builtIn.first { $0.id == "warp-wg-stun" }?.unsupportedReason?.key, "strategy.wgUnsupported")
+        XCTAssertEqual(StrategyCatalog.builtIn.first { $0.id == "warp-q-google-bad" }?.unsupportedReason?.key, "strategy.badsum")
+    }
+
+    func testAnUnsupportedStrategyHasAnEmptyPlanSoItMustNeverBeSentToTheDaemon() {
+        // This is *why* readiness matters: the wire format only carries fake steps and a TCP split.
+        for id in ["warp-q-google-bad", "warp-t-google-md5", "warp-t-seqovl", "warp-t-vk-seq", "warp-t-hostfake"] {
+            let plan = StrategyCatalog.builtIn.first { $0.id == id }!.plan
+            XCTAssertTrue(plan.fakeSteps.isEmpty && plan.tcpDesync == nil, "\(id) would be sent as a direct connection")
         }
     }
 }

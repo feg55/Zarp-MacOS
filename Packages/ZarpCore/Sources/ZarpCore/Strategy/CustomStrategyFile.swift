@@ -10,7 +10,12 @@ public enum CustomStrategyFile {
     /// duplicate ids win (matches saving results into a dictionary keyed by id).
     public static func parse(_ text: String, onSkipped: (String) -> Void = { _ in }) -> [Strategy] {
         var out: [Strategy] = []
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        // CRLF files (Windows editors, some text editors' defaults) and a leading BOM are fine:
+        // Swift sees "\r\n" as one Character, so a plain split on "\n" would not split them.
+        var normalized = text
+        if normalized.hasPrefix("\u{FEFF}") { normalized.removeFirst() }
+        normalized = normalized.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        for rawLine in normalized.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty, !line.hasPrefix("#") else { continue }
             let parts = line.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
