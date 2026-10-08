@@ -54,14 +54,28 @@ final class ZarpdInstaller: ObservableObject {
     /// matching Apple's documented pattern for this exact status.
     ///
     /// Refuses (`BadInstallLocation`, before calling `register()`, so no authorization prompt is
-    /// ever shown for a registration that would be broken anyway) when the app is running from a
-    /// mounted disk image or an App Translocation path.
+    /// ever shown for a registration that would be wrong anyway) when the app is running from a
+    /// mounted disk image or an App Translocation path — both go away, taking the daemon's
+    /// executable with them — and, in a release build, from anywhere but `/Applications`: the
+    /// daemon runs as root, so its executable must not live in a folder the logged-in user (or
+    /// malware running as them) can modify. Development builds (run from Xcode's DerivedData) are
+    /// exempt from that last rule so the build-and-register workflow keeps working.
     func install() throws {
-        if let problem = InstallLocationProblem.detect(bundlePath: Bundle.main.bundleURL.path) {
+        if let problem = InstallLocationProblem.detect(
+            bundlePath: Bundle.main.bundleURL.path, requireSystemApplications: Self.isReleaseBuild
+        ) {
             throw BadInstallLocation(problem: problem)
         }
         try service.register()
         refresh()
+    }
+
+    private static var isReleaseBuild: Bool {
+        #if DEBUG
+        return false
+        #else
+        return true
+        #endif
     }
 
     /// Unregisters the daemon (Phase 8's "clean uninstall"). Idempotent — unregistering something

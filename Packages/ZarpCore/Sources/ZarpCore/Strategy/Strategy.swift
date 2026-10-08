@@ -38,9 +38,20 @@ public struct Strategy: Identifiable, Hashable, Sendable {
     /// whether macOS can currently carry any of it out.
     public var plan: DesyncPlan { StrategyArgsParser.parse(transport: transport, args: args) }
 
-    /// Current readiness, looked up from `StrategyReadinessRegistry` (empty until the real-Mac PoC
-    /// fills it in, so every built-in strategy reads `.pendingRealMacVerification` today).
-    public var readiness: StrategyReadiness { StrategyReadinessRegistry.readiness(for: id) }
+    /// Whether this port can perform what the strategy asks for. Derived, not looked up: WireGuard
+    /// has no daemon support yet, and anything `StrategyArgsParser` flagged (raw-socket tricks,
+    /// unknown syntax) cannot be expressed as a fake-packet send or a TCP split.
+    public var readiness: StrategyReadiness {
+        if transport == .wireGuard { return .unsupported(Msg("strategy.wgUnsupported")) }
+        if let issue = plan.parseIssue { return .unsupported(issue) }
+        return .available
+    }
+
+    /// Why the strategy can't run here, or `nil` if it can.
+    public var unsupportedReason: Msg? {
+        if case .unsupported(let reason) = readiness { return reason }
+        return nil
+    }
 
     // Identity is by id: two `Strategy` values with the same id are the same strategy even if one
     // is a freshly-reloaded copy with identical fields — matches how results/selection are keyed.

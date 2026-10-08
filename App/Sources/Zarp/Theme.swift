@@ -2,11 +2,6 @@ import SwiftUI
 
 /// Dark theme, ported color-for-color from Windows Zarp's `Theme.cs` (`UI/Theme.cs`) so the two
 /// apps read as the same product. sRGB values, same as the Windows `Color.FromArgb` constants.
-///
-/// UNVERIFIED: never rendered on a real display. Colors, spacing and the strategy table layout
-/// below are transcribed from the Windows source and the attached screenshot, not from any
-/// on-screen check of this SwiftUI code (no macOS/Xcode available in the environment this was
-/// written in). Expect to nudge padding/sizes once someone opens this in Xcode.
 enum Theme {
     static let back = Color(red: 18 / 255, green: 20 / 255, blue: 25 / 255)
     static let panel = Color(red: 27 / 255, green: 30 / 255, blue: 37 / 255)

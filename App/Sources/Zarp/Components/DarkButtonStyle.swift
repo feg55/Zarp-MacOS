@@ -3,8 +3,6 @@ import SwiftUI
 /// Flat, rounded dark button — matches Windows Zarp's `DarkButton` (`UI/Controls.cs`): panel-color
 /// background, accent-color background for the primary action, disabled state fades text and
 /// border instead of hiding them.
-///
-/// UNVERIFIED: not rendered on a real display (see `Theme.swift`'s note).
 struct DarkButtonStyle: ButtonStyle {
     var primary: Bool = false
     var isEnabled: Bool = true

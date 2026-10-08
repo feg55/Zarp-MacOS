@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    # Apple Silicon: the daemon is arm64-only and uses macOS-only APIs (utun, IP_BOUND_IF).
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: zarpd/go.mod
+
+      - name: Go — format, vet, tests (race detector)
+        working-directory: zarpd
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; echo "gofmt needed"; exit 1; }
+          go vet ./...
+          go test -race -count=1 ./...
+
+      - name: Swift — ZarpCore tests
+        working-directory: Packages/ZarpCore
+        run: swift test
+
+      - name: Third-party notices are current
+        run: scripts/gen-notices.sh --check
+
+      - name: The app builds (unsigned)
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          xcodebuild -project Zarp.xcodeproj -scheme Zarp -configuration Release \
+            -destination 'platform=macOS,arch=arm64' CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO build

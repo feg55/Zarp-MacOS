@@ -31,8 +31,16 @@ targets:
       - path: Resources/blobs
         buildPhase: resources
         type: folder
+      # THIRD_PARTY_NOTICES.md and the license texts that must accompany the distributed
+      # binaries (the Go components inside zarpd, the zapret2 blobs) — Settings' "Licenses" button
+      # copies this folder out and reveals it. Regenerate with scripts/gen-notices.sh.
+      - path: Resources/Licenses
+        buildPhase: resources
+        type: folder
     dependencies:
       - package: ZarpCore
+      - package: ZarpCore
+        product: ZarpdIPC
     postCompileScripts:
       - name: "Build and embed zarpd daemon"
         # `basedOnDependencyAnalysis: false` — always run, since we don't declare explicit
@@ -42,7 +50,10 @@ targets:
         basedOnDependencyAnalysis: false
         script: |
           set -euo pipefail
-          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+          # Xcode runs script phases with a minimal PATH: add the usual Go locations (Homebrew on
+          # Apple Silicon and Intel, and the official installer's /usr/local/go).
+          export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin:$PATH"
+          command -v go >/dev/null || { echo "error: Go is not installed (brew install go)" >&2; exit 1; }
 
           DEST="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}"
           mkdir -p "${DEST}/MacOS" "${DEST}/Library/LaunchDaemons"
@@ -58,8 +69,22 @@ targets:
           export CGO_LDFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
 
           cd "${SRCROOT}/zarpd"
-          INFO_PLIST="${SRCROOT}/zarpd/cmd/zarpd/Info.plist"
-          go build -ldflags="-linkmode external -extldflags -Wl,-sectcreate,__TEXT,__info_plist,${INFO_PLIST}" \
+
+          # The daemon's embedded Info.plist carries the app's version (a copy is stamped here so
+          # the checked-in template never has to be edited), and the same version is compiled in as
+          # main.version — the app compares it with its own to notice a stale daemon left running
+          # after an app update.
+          INFO_PLIST="${DERIVED_FILE_DIR}/zarpd-Info.plist"
+          mkdir -p "${DERIVED_FILE_DIR}"
+          cp "${SRCROOT}/zarpd/cmd/zarpd/Info.plist" "${INFO_PLIST}"
+          /usr/libexec/PlistBuddy \
+            -c "Set :CFBundleShortVersionString ${MARKETING_VERSION}" \
+            -c "Set :CFBundleVersion ${CURRENT_PROJECT_VERSION}" "${INFO_PLIST}"
+
+          # The extldflags value is single-quoted so a build path containing spaces stays one
+          # argument; -trimpath keeps the builder's directories out of the binary.
+          go build -trimpath \
+            -ldflags="-linkmode external -extldflags '-Wl,-sectcreate,__TEXT,__info_plist,${INFO_PLIST}' -X main.version=${MARKETING_VERSION}" \
             -o "${DEST}/MacOS/zarpd" ./cmd/zarpd
 
           cp "${SRCROOT}/zarpd/cmd/zarpd/io.github.zarp.mac.zarpd.plist" "${DEST}/Library/LaunchDaemons/"
@@ -112,15 +137,31 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     # Also runnable without Xcode: `cd Packages/ZarpCore && swift test` (see docs/IMPLEMENTATION_PLAN.md).
 
+  # The client for zarpd's socket, tested against a fake daemon (no GUI, no root, no network).
+  ZarpdIPCTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Packages/ZarpCore/Tests/ZarpdIPCTests
+    dependencies:
+      - package: ZarpCore
+      - package: ZarpCore
+        product: ZarpdIPC
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   Zarp:
     build:
       targets:
         Zarp: all
         ZarpCoreTests: [test]
+        ZarpdIPCTests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - ZarpCoreTests
+        - ZarpdIPCTests

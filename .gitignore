@@ -13,6 +13,8 @@ Generated/
 # zarpd (Go): built binaries, named after their cmd/ directory, land at the module root when
 # built with `go build ./...` from there — none of them belong in git.
 zarpd/tunpoc
+zarpd/tunnelpoc
+zarpd/zarpctl
 zarpd/warppoc
 zarpd/dialpoc
 zarpd/zarpd

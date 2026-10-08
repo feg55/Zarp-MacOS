@@ -7,6 +7,9 @@ public protocol CustomStrategyStore: Sendable {
     /// Writes `CustomStrategyFile.template` if the file doesn't exist yet (Windows
     /// `StrategyCatalog.Load`'s behavior on first run).
     func writeTemplateIfMissing()
+    /// Replaces the file's contents (the in-app editor's Save). Throws if the file can't be
+    /// written, so the editor can say so instead of pretending the user's strategies were saved.
+    func saveText(_ text: String) throws
 }
 
 /// File-backed store, e.g. `~/Library/Application Support/Zarp/strategies.txt`.
@@ -29,6 +32,12 @@ public final class FileCustomStrategyStore: CustomStrategyStore, @unchecked Send
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? CustomStrategyFile.template.data(using: .utf8)?.write(to: url)
     }
+
+    public func saveText(_ text: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: url, options: .atomic)
+    }
 }
 
 /// In-memory store for tests and previews.
@@ -48,5 +57,10 @@ public final class InMemoryCustomStrategyStore: CustomStrategyStore, @unchecked 
     public func writeTemplateIfMissing() {
         lock.lock(); defer { lock.unlock() }
         if text.isEmpty { text = CustomStrategyFile.template }
+    }
+
+    public func saveText(_ newText: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        text = newText
     }
 }

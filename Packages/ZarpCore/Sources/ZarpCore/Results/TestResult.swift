@@ -40,6 +40,27 @@ public struct TestResult: Hashable, Sendable, Codable {
         self.timestamp = timestamp
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case strategyId, ok, connectMs, pingMs, error, errorKey, errorArgs, rechecked, confirmed, endpoint, timestamp
+    }
+
+    /// Lenient: only `strategyId` is required. A result written by an older build, or with one
+    /// field damaged, is still a result — and a field added later never invalidates saved ones.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        strategyId = try c.decode(String.self, forKey: .strategyId)
+        ok = (try? c.decodeIfPresent(Bool.self, forKey: .ok)) ?? false
+        connectMs = (try? c.decodeIfPresent(Int.self, forKey: .connectMs)) ?? 0
+        pingMs = (try? c.decodeIfPresent(Int.self, forKey: .pingMs)) ?? 0
+        error = (try? c.decodeIfPresent(String.self, forKey: .error)) ?? nil
+        errorKey = (try? c.decodeIfPresent(String.self, forKey: .errorKey)) ?? nil
+        errorArgs = (try? c.decodeIfPresent([String].self, forKey: .errorArgs)) ?? []
+        rechecked = (try? c.decodeIfPresent(Bool.self, forKey: .rechecked)) ?? false
+        confirmed = (try? c.decodeIfPresent(Bool.self, forKey: .confirmed)) ?? false
+        endpoint = (try? c.decodeIfPresent(String.self, forKey: .endpoint)) ?? nil
+        timestamp = (try? c.decodeIfPresent(Date.self, forKey: .timestamp)) ?? Date(timeIntervalSince1970: 0)
+    }
+
     /// Lower is better. Ping weighs 4×: it affects every request after connecting, connecting
     /// happens once — same weighting as Windows `TestResult.Score` / Android `TestResult.score`.
     public var score: Int { ok ? connectMs + pingMs * 4 : Int.max }

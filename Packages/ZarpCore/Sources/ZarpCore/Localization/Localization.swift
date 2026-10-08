@@ -89,10 +89,27 @@ public final class Localization: @unchecked Sendable {
     /// `{0}`, `{1}`, ... placeholder substitution, same convention as Windows Zarp's language
     /// files. Missing placeholders are left as-is instead of throwing, so a malformed or
     /// not-yet-updated translation never crashes the app — same reasoning as Windows' catch-and-append.
+    ///
+    /// One left-to-right pass over the template: a substituted value is never scanned again, so an
+    /// argument that happens to contain "{1}" (an error message, a strategy name a user typed)
+    /// stays literal instead of being replaced by a later argument.
     static func format(_ template: String, _ args: [String]) -> String {
-        var out = template
-        for (i, arg) in args.enumerated() {
-            out = out.replacingOccurrences(of: "{\(i)}", with: arg)
+        guard !args.isEmpty, template.contains("{") else { return template }
+        var out = ""
+        out.reserveCapacity(template.count + args.reduce(0) { $0 + $1.count })
+        var index = template.startIndex
+        while index < template.endIndex {
+            let ch = template[index]
+            if ch == "{", let close = template[index...].firstIndex(of: "}") {
+                let inner = template[template.index(after: index)..<close]
+                if let n = Int(inner), n >= 0, n < args.count, inner.allSatisfy(\.isASCII), !inner.hasPrefix("+") {
+                    out += args[n]
+                    index = template.index(after: close)
+                    continue
+                }
+            }
+            out.append(ch)
+            index = template.index(after: index)
         }
         return out
     }
@@ -114,10 +131,15 @@ public final class Localization: @unchecked Sendable {
 
     /// Parses one `key = value` file. `\n` in a value becomes a real newline, `#` starts a
     /// comment line, blank lines are ignored — identical format to Windows Zarp's `Lang/*.txt`
-    /// (see `L.Parse` there).
+    /// (see `L.Parse` there). Windows line endings (CRLF) and a leading byte-order mark are
+    /// accepted: the Windows files these come from may carry either, and Swift treats "\r\n" as a
+    /// single Character, so a plain split on "\n" would not split such a file at all.
     public static func parseTable(_ contents: String) -> [String: String] {
         var table: [String: String] = [:]
-        for rawLine in contents.split(separator: "\n", omittingEmptySubsequences: false) {
+        var text = contents
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+        text = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty, !line.hasPrefix("#"), let eq = line.firstIndex(of: "=") else { continue }
             let key = line[line.startIndex..<eq].trimmingCharacters(in: .whitespaces)

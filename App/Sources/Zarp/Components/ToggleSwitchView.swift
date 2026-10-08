@@ -3,8 +3,6 @@ import SwiftUI
 /// Track-and-knob switch instead of a system checkbox, matching Windows Zarp's `ToggleSwitch`
 /// (`UI/Controls.cs`): the track fills with `Theme.accent` when on, `Theme.off` when off, with a
 /// lighter hover tint.
-///
-/// UNVERIFIED: not rendered on a real display (see `Theme.swift`'s note).
 struct ToggleSwitchView: View {
     let title: String
     @Binding var isOn: Bool

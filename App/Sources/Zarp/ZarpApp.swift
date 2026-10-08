@@ -5,29 +5,25 @@ import ZarpCore
 /// App entry point: wires `AppViewModel` to real file-backed stores and a real log file, then
 /// shows the main window and a menu bar item.
 ///
-/// UNVERIFIED: never built or run (no Xcode/macOS in the environment this was written in — see
-/// `docs/IMPLEMENTATION_PLAN.md`). In particular, `Localization.load`'s search path for
-/// `Resources/Lang` depends on how Xcode bundles the top-level `Resources/Lang` folder (a "folder
-/// reference" blue-folder build phase entry is the usual way to get
-/// `Bundle.main.resourceURL?.appendingPathComponent("Lang")` to resolve; `project.yml` at the repo
-/// root sets this up, but XcodeGen has not been run against it on a real Mac yet).
-///
 /// The titlebar red-button close, the menu bar Quit item, and ⌘Q all funnel into the same
 /// `AppViewModel.requestClose` path: SwiftUI's `Window` scene has no direct hook for
 /// `windowShouldClose(_:)`, so `WindowCloseInterceptor` below attaches a plain `NSWindowDelegate`
 /// to the underlying `NSWindow` once it exists, and always answers `false` — `requestClose` decides
 /// asynchronously (it may show `CloseConfirmationView` as a sheet first) and itself calls
 /// `NSApp.hide`/`NSApp.terminate` when it has an answer, exactly as the other two paths already do.
+///
+/// *Actually* terminating — by any route, including ones that never pass through `requestClose`
+/// (the Dock's Quit, logging out, shutting down, `osascript`) — goes through
+/// `ZarpAppDelegate.applicationShouldTerminate`, which unwinds a running scan and disconnects if the
+/// user asked for that before the process exits.
 @main
 @MainActor
 struct ZarpApp: App {
-    // Marking the type @MainActor (rather than relying on `App.body`'s own @MainActor requirement
-    // to carry over) is the belt-and-suspenders choice here: `@StateObject`'s default-value
-    // expression below runs as part of this struct's synthesized `init()`, a different
-    // declaration than `body`, and property initializers can't use `await` if that turned out to
-    // need it — TODO(real Mac): confirm this is even necessary once it can actually be compiled;
-    // it may be redundant with SwiftUI's own inference.
-    @StateObject private var vm = ZarpApp.makeViewModel()
+    @NSApplicationDelegateAdaptor(ZarpAppDelegate.self) private var appDelegate
+
+    // The view model is a process-wide singleton (`AppServices`) so the app delegate — which AppKit
+    // creates on its own — talks to the very same instance the views observe.
+    @StateObject private var vm = AppServices.viewModel
 
     var body: some Scene {
         Window("Zarp", id: "main") {
@@ -37,7 +33,7 @@ struct ZarpApp: App {
         .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .appTermination) {
-                Button("Quit Zarp") { requestClose() }
+                Button(vm.localization.string("tray.quit")) { requestClose() }
                     .keyboardShortcut("q", modifiers: .command)
             }
         }
@@ -47,11 +43,10 @@ struct ZarpApp: App {
             Button(menuToggleTitle) { vm.connectButtonTapped() }
             Divider()
             Button(vm.localization.string("tray.settings")) {
-                // TODO(real Mac): this only raises the main window, which itself opens Settings
-                // as a sheet. A direct-to-Settings menu action would need `@Environment(\.openWindow)`
-                // with Settings as its own `Window` scene instead of a sheet — worth reconsidering
-                // once this is actually running and the current approach can be judged on-screen.
+                // The Settings screen is a sheet of the main window: raise the window, and ask it to
+                // present the sheet.
                 NSApp.activate(ignoringOtherApps: true)
+                vm.settingsRequested = true
             }
             Divider()
             Button(vm.localization.string("tray.exit")) { requestClose() }
@@ -74,10 +69,13 @@ struct ZarpApp: App {
     private func requestClose() {
         vm.requestClose(hide: { NSApp.hide(nil) }, terminate: { NSApp.terminate(nil) })
     }
+}
 
-    // MARK: - Wiring
+/// Creates the one `AppViewModel` on first use, with real file-backed stores and a real log file.
+@MainActor
+enum AppServices {
+    static let viewModel: AppViewModel = makeViewModel()
 
-    @MainActor
     private static func makeViewModel() -> AppViewModel {
         let dataDir = dataDirectory()
         let log = LogBus()
@@ -85,8 +83,17 @@ struct ZarpApp: App {
 
         let localization = Localization.load(languageFilesDirectory: languageFilesDirectory())
 
+        // Problems reading or writing zarp.json go to the log in the user's language (Windows
+        // `log.configBroken` / `log.configSaveFailed`) instead of vanishing.
+        let settingsStore = JSONFileSettingsStore(url: dataDir.appendingPathComponent("zarp.json")) { problem in
+            switch problem {
+            case .corrupt(let reason): log.write(localization.string("log.configBroken", [reason]))
+            case .saveFailed(let reason): log.write(localization.string("log.configSaveFailed", [reason]))
+            }
+        }
+
         return AppViewModel(
-            settingsStore: JSONFileSettingsStore(url: dataDir.appendingPathComponent("zarp.json")),
+            settingsStore: settingsStore,
             strategyStore: FileCustomStrategyStore(url: dataDir.appendingPathComponent(CustomStrategyFile.fileName)),
             localization: localization,
             log: log
@@ -94,9 +101,7 @@ struct ZarpApp: App {
     }
 
     private static func dataDirectory() -> URL {
-        let base = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
-            ?? FileManager.default.temporaryDirectory
-        let dir = base.appendingPathComponent("Zarp", isDirectory: true)
+        let dir = AppViewModel.dataDirectory()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -109,8 +114,7 @@ struct ZarpApp: App {
         return dir
     }
 
-    /// TODO(real Mac): confirm this resolves once `project.yml` is generated and the app is
-    /// built — see the type-level doc comment. Falls back to the repo-relative path so
+    /// The bundled `Resources/Lang` folder. Falls back to the repo-relative path so
     /// `swift run`-style development before there's an app bundle at all still finds real
     /// translations instead of only ever seeing English fallback text.
     private static func languageFilesDirectory() -> URL {
@@ -121,6 +125,25 @@ struct ZarpApp: App {
         return URL(fileURLWithPath: #filePath) // App/Sources/Zarp/ZarpApp.swift
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Resources/Lang")
+    }
+}
+
+/// Makes quitting safe however it is requested. Closing the window never reaches here (the window
+/// delegate swallows it); `NSApp.terminate` does — from ⌘Q and the menu bar via `requestClose`, and
+/// directly from the Dock's Quit, a logout or a shutdown, which never see `requestClose` at all.
+final class ZarpAppDelegate: NSObject, NSApplicationDelegate {
+    private var terminating = false
+
+    @MainActor
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // A second request while the first is unwinding must not start a second sequence.
+        guard !terminating else { return .terminateLater }
+        terminating = true
+        Task { @MainActor in
+            await AppServices.viewModel.prepareForTermination()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 }
 

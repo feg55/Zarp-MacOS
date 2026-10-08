@@ -28,4 +28,40 @@ final class InstallLocationTests: XCTestCase {
         // A prefix match, not a substring one: a user folder that merely contains "Volumes".
         XCTAssertNil(InstallLocationProblem.detect(bundlePath: "/Users/someone/Volumes/Zarp.app"))
     }
+
+    // MARK: - Release builds: the daemon runs as root, so where it lives matters
+
+    func testReleaseBuildsOnlyRegisterTheDaemonFromTheSystemApplicationsFolder() {
+        func detect(_ path: String) -> InstallLocationProblem? {
+            InstallLocationProblem.detect(bundlePath: path, requireSystemApplications: true)
+        }
+        XCTAssertNil(detect("/Applications/Zarp.app"))
+        XCTAssertNil(detect("/Applications/Utilities/Zarp.app"))
+        // Folders the logged-in user owns: a root process must not run an executable they can replace.
+        XCTAssertEqual(detect("/Users/someone/Applications/Zarp.app"), .notInApplications)
+        XCTAssertEqual(detect("/Users/someone/Downloads/Zarp.app"), .notInApplications)
+        XCTAssertEqual(detect("/Users/someone/Library/Developer/Xcode/DerivedData/Zarp-abc/Build/Products/Release/Zarp.app"), .notInApplications)
+        XCTAssertEqual(detect("/tmp/Zarp.app"), .notInApplications)
+    }
+
+    func testLookalikeAndTraversalPathsAreNotTheApplicationsFolder() {
+        func detect(_ path: String) -> InstallLocationProblem? {
+            InstallLocationProblem.detect(bundlePath: path, requireSystemApplications: true)
+        }
+        XCTAssertEqual(detect("/ApplicationsFake/Zarp.app"), .notInApplications)
+        XCTAssertEqual(detect("/Applications"), .notInApplications)
+        XCTAssertEqual(detect("/Applications/"), .notInApplications)
+        XCTAssertEqual(detect("/Applications/../Users/someone/Zarp.app"), .notInApplications, "a .. must not smuggle a path in")
+        XCTAssertEqual(detect("/Users/someone/Applications/../../../../Applications/../tmp/Zarp.app"), .notInApplications)
+    }
+
+    func testTheMoreSpecificProblemWinsInAReleaseBuild() {
+        XCTAssertEqual(InstallLocationProblem.detect(bundlePath: "/Volumes/Zarp/Zarp.app", requireSystemApplications: true), .mountedVolume)
+        XCTAssertEqual(InstallLocationProblem.detect(bundlePath: "/private/var/folders/x/T/AppTranslocation/ABC/d/Zarp.app", requireSystemApplications: true), .translocated)
+    }
+
+    func testDevelopmentBuildsAreNotAffectedByTheNewRule() {
+        // The default keeps the Phase 8 workflow (register from DerivedData) working.
+        XCTAssertNil(InstallLocationProblem.detect(bundlePath: "/Users/someone/Library/Developer/Xcode/DerivedData/Zarp/Build/Products/Debug/Zarp.app"))
+    }
 }
