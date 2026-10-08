@@ -1,5 +1,5 @@
 // Package tunnel pumps packets between a real macOS utun device and a warp.Session's CONNECT-IP
-// stream directly — no userspace netstack, no local SOCKS5 proxy (see docs/ARCHITECTURE.md §9.1
+// stream directly — no userspace netstack, no local SOCKS5 proxy (see docs/ARCHITECTURE.md §3
 // for why Android's zarpcore.Tunnel does something different and why that doesn't apply here).
 package tunnel
 
@@ -13,7 +13,7 @@ import (
 	"github.com/feg55/zarp-macos/zarpd/warp"
 )
 
-// headroom matches tun_darwin.go's contract (see zarpd/cmd/tunpoc, phase 2): both Read and Write
+// headroom matches wireguard-go's tun_darwin.go contract: both Read and Write
 // need 4 bytes before the IP packet for the kernel's/our own address-family header.
 const headroom = 4
 

@@ -4,8 +4,9 @@ import ZarpCore
 import ZarpdIPC
 
 /// Settings window: strategies table on top, the zarpd daemon's status, and options below — the
-/// same sections as Windows Zarp's `SettingsForm` (`UI/SettingsForm.cs`) plus the daemon panel,
-/// sized close to its 800×720 default with the same 760×700 minimum.
+/// same sections as Windows Zarp's `SettingsForm` (`UI/SettingsForm.cs`) plus the daemon panel.
+/// 880 pt wide at minimum: the six strategy columns need about 825 pt with their cell padding, and
+/// anything narrower pushes "Connect, ms" and "Ping, ms" out of sight behind a horizontal scroll bar.
 struct SettingsView: View {
     @ObservedObject var vm: AppViewModel
 
@@ -25,14 +26,14 @@ struct SettingsView: View {
             .padding(.bottom, 20)
         }
         .background(Theme.back)
-        .frame(minWidth: 760, minHeight: 700)
+        .frame(minWidth: 880, minHeight: 700)
         .onAppear {
             vm.refreshDaemonState()
             vm.refreshAutostart()
         }
     }
 
-    // MARK: - zarpd daemon (Phase 8)
+    // MARK: - zarpd daemon
 
     private var daemonSection: some View {
         VStack(alignment: .leading, spacing: 10) {

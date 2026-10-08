@@ -1,4 +1,4 @@
-// zarpd is the privileged daemon Zarp.app talks to over IPC (docs/ARCHITECTURE.md §1, §9.4):
+// zarpd is the privileged daemon Zarp.app talks to over IPC (docs/ARCHITECTURE.md §1, §5):
 // WARP account registration (only when the app asks, after the user accepted Cloudflare's terms),
 // MASQUE dial with a strategy applied, the utun and its routes — a single measurement route for a
 // scan, or all of the machine's traffic for a persistent connection — and the cdn-cgi/trace

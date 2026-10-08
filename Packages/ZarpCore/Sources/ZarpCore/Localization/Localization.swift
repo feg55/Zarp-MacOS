@@ -2,9 +2,8 @@ import Foundation
 
 /// Loads Zarp's `key = value` language files and resolves keys to text, with English as the
 /// fallback for any key missing in the current language — same behavior as Windows Zarp's `L`
-/// (`Core/L.cs`) and Android Zarp's `L`. The file format and the shared keys come straight from
-/// the Windows `Lang/*.txt` files (MIT), copied into `Resources/Lang` in this project (see that
-/// folder's own note on what has and hasn't been hand-edited since).
+/// (`Core/L.cs`) and Android Zarp's `L`. The file format comes from the Windows `Lang/*.txt` files
+/// (MIT); `Resources/Lang/en.txt`'s header describes the rules every language file follows.
 public final class Localization: @unchecked Sendable {
     public struct Language: Identifiable, Hashable, Sendable {
         public let code: String

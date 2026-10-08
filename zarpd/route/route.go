@@ -1,4 +1,4 @@
-// Package route handles the routing side of docs/ARCHITECTURE.md §9.3: keeping the WARP control
+// Package route handles the routing side of docs/ARCHITECTURE.md §6: keeping the WARP control
 // socket on the physical interface so it can never loop back through the tunnel it's still
 // establishing, adding and removing the routes that send traffic into the utun (one narrow host
 // route for a scan, or the full-tunnel set — see fulltunnel.go), and the DNS override that goes
@@ -93,9 +93,8 @@ func parseRouteGet(out string) map[string]string {
 }
 
 // CurrentDefault inspects `route -n get default` — shelling out rather than using a raw
-// PF_ROUTE/AF_ROUTE socket, the same pragmatic choice zarpd/cmd/tunpoc's configureAddress makes,
-// and much less code to get wrong than parsing routing socket messages by hand for a one-shot
-// query.
+// PF_ROUTE/AF_ROUTE socket, the same pragmatic choice ConfigureAddress makes for `ifconfig`, and
+// much less code to get wrong than parsing routing socket messages by hand for a one-shot query.
 func (r *Router) CurrentDefault() (*Physical, error) {
 	out, err := r.run.Run(routeBin, "-n", "get", "default")
 	if err != nil {
@@ -119,7 +118,7 @@ func (r *Router) CurrentDefault() (*Physical, error) {
 
 // BindUDP binds a UDP socket to Physical's interface (IP_BOUND_IF/IPV6_BOUND_IF) so its traffic
 // always leaves that interface regardless of the routing table — macOS's equivalent of Android's
-// VpnService.protect(fd), see docs/ARCHITECTURE.md §9.2/§9.3.
+// VpnService.protect(fd), see docs/ARCHITECTURE.md §3 and §6.
 func (p *Physical) BindUDP(conn *net.UDPConn) error {
 	raw, err := conn.SyscallConn()
 	if err != nil {

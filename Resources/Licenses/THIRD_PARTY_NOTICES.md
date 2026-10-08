@@ -4,6 +4,8 @@ Zarp for macOS is an independent project, not affiliated with or endorsed by Clo
 Cloudflare and WARP are trademarks of Cloudflare, Inc. It contains no Cloudflare software: it
 talks to Cloudflare's public WARP service through the open-source components listed below.
 
+Zarp for macOS itself is released under the MIT License (Zarp-macOS-LICENSE.txt, next to this file).
+
 The app bundle contains:
 
 - **Zarp.app** — the SwiftUI application. Its strategy catalog, scan/scoring algorithms, interface

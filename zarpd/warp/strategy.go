@@ -1,7 +1,7 @@
 package warp
 
 // The DPI strategy executor: sends fake packets on the UDP socket before the real MASQUE dial
-// reuses it (docs/ARCHITECTURE.md §9.2). The algorithm itself — for each step, optionally lower
+// reuses it (docs/ARCHITECTURE.md §3). The algorithm itself — for each step, optionally lower
 // TTL, send the blob N times, restore TTL — is the same one Zarp-Android's FakeStrategy.kt
 // implements, reimplemented directly against Go's syscall package rather than adapted from it
 // (it has no Android-specific concept in it to begin with).
@@ -24,7 +24,7 @@ const (
 
 // FakeStep is one `fake:blob=B:repeats=N[:ip_ttl=N]` step from a strategy's DesyncPlan
 // (ZarpCore's parsed representation, mirrored here rather than imported — zarpd is a separate
-// Go module from the Swift ZarpCore package; the IPC layer, docs/ARCHITECTURE.md §9.4, is what
+// Go module from the Swift ZarpCore package; the IPC layer, docs/ARCHITECTURE.md §5, is what
 // translates one into the other).
 type FakeStep struct {
 	Blob    []byte

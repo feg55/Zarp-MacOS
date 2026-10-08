@@ -1,7 +1,7 @@
 /// This file is the entire seam between the strategy/scan/settings/UI code in this package and
 /// live networking. Nothing on this side of the seam knows or assumes how a WARP connection is
 /// actually made: in the app, `ZarpdClient` implements these protocols by talking to the `zarpd`
-/// daemon (`docs/ARCHITECTURE.md` §9) — which owns the WARP session, the utun and the routes — and
+/// daemon (`docs/ARCHITECTURE.md` §1) — which owns the WARP session, the utun and the routes — and
 /// the tests substitute scripted fakes. `ZarpEngine` is written only against what is declared here.
 ///
 /// Nothing in this package opens a socket, touches a route or runs a process.

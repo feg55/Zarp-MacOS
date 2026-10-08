@@ -35,6 +35,9 @@ English
 If step 3 does not offer "Open Anyway", this Terminal command removes the block instead:
     xattr -dr com.apple.quarantine /Applications/Zarp.app
 
+Something went wrong?  https://github.com/feg55/Zarp-MacOS/blob/main/docs/TROUBLESHOOTING.md
+Zarp is free software under the MIT License (LICENSE.txt, next to this file).
+
 
 Русский
 -------
@@ -65,3 +68,6 @@ If step 3 does not offer "Open Anyway", this Terminal command removes the block 
 
 Если на шаге 3 нет кнопки «Все равно открыть», снять блокировку можно командой в Терминале:
     xattr -dr com.apple.quarantine /Applications/Zarp.app
+
+Что-то пошло не так?  https://github.com/feg55/Zarp-MacOS/blob/main/docs/TROUBLESHOOTING.md (на английском)
+Zarp — свободное ПО по лицензии MIT (LICENSE.txt рядом с этим файлом).

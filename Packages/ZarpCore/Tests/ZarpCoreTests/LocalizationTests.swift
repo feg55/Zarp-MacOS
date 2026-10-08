@@ -81,27 +81,18 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
-    func testEveryLanguageCoversEveryKeyThatExistedInTheWindowsAppAndRussianIsComplete() {
-        // Mirrors Windows Zarp's own test (`Zarp.Tests`): every language should define the same key
-        // set as English. The seven non-English files other than Russian are still the verbatim
-        // Windows text (see Resources/Lang/en.txt's header note), so they legitimately lack the keys
-        // this port added; Localization's English fallback covers those at runtime. What must never
-        // happen is a language *losing* a key the Windows baseline had — and Russian, the main
-        // audience, must be complete.
+    func testEveryLanguageDefinesExactlyTheEnglishKeys() {
+        // en.txt is the reference. A language that lacks a key silently shows English for it; one that
+        // has an extra key is carrying text nothing displays any more.
         let loc = Localization.load(languageFilesDirectory: repoRootLangDirectory())
         let englishKeys = loc.keys(for: "en")
         XCTAssertFalse(englishKeys.isEmpty)
-
-        XCTAssertEqual(englishKeys.subtracting(loc.keys(for: "ru")), [], "ru.txt must define every key en.txt does")
-
-        // de.txt is an untouched copy of the Windows file: its key set is the Windows baseline.
-        let windowsBaseline = loc.keys(for: "de")
-        let portedKeys = englishKeys.subtracting(windowsBaseline)
-        XCTAssertFalse(portedKeys.isEmpty, "the baseline assumption (de.txt = Windows text) no longer holds")
         for language in Localization.languages where language.code != "en" {
-            let missing = englishKeys.subtracting(loc.keys(for: language.code))
-            XCTAssertTrue(missing.isSubset(of: portedKeys),
-                          "\(language.code).txt lost keys the Windows files have: \(missing.subtracting(portedKeys).sorted())")
+            let keys = loc.keys(for: language.code)
+            XCTAssertEqual(englishKeys.subtracting(keys).sorted(), [],
+                           "\(language.code).txt lacks keys that en.txt defines")
+            XCTAssertEqual(keys.subtracting(englishKeys).sorted(), [],
+                           "\(language.code).txt defines keys that en.txt does not")
         }
     }
 
@@ -118,11 +109,28 @@ final class LocalizationTests: XCTestCase {
             }
             return found
         }
-        for language in Localization.languages where language.code == "ru" {
+        for language in Localization.languages where language.code != "en" {
             for key in loc.keys(for: "en").sorted() {
                 guard let english = loc.raw("en", key), let translated = loc.raw(language.code, key) else { continue }
                 XCTAssertEqual(placeholders(translated), placeholders(english),
                                "\(language.code).txt: '\(key)' has different {n} placeholders than en.txt")
+            }
+        }
+    }
+
+    func testNoTranslationIsEmptyOrMentionsWindowsOnlyConcepts() {
+        // The first translations were vendored from the Windows app, whose text talks about WinDivert,
+        // Defender and the tray. None of that exists here, and an empty value would show a blank label.
+        let loc = Localization.load(languageFilesDirectory: repoRootLangDirectory())
+        let windowsOnly = ["windows", "windivert", "winws", "defender", "warp-cli", ".exe"]
+        for language in Localization.languages {
+            for key in loc.keys(for: language.code).sorted() {
+                let value = loc.raw(language.code, key) ?? ""
+                XCTAssertFalse(value.trimmingCharacters(in: .whitespaces).isEmpty, "\(language.code).txt: '\(key)' is empty")
+                let lowered = value.lowercased()
+                for word in windowsOnly {
+                    XCTAssertFalse(lowered.contains(word), "\(language.code).txt: '\(key)' mentions \(word), which this app does not have")
+                }
             }
         }
     }

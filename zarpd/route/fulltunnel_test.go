@@ -12,10 +12,9 @@ import (
 // tunnelWorld is a fake system: a routing table the fake `route` command reads and writes, so the
 // tests assert on *state* (what routes exist) as well as on commands.
 type tunnelWorld struct {
-	gateways map[string]string // "inet 162.159.198.2" -> gateway, for routes added through one
-	routes   map[string]string // "inet 0.0.0.0/1" -> interface
-	failAdd  map[string]error  // key -> error returned when adding that route
-	dnsCalls []string
+	gateways map[string]string                                // "inet 162.159.198.2" -> gateway, for routes added through one
+	routes   map[string]string                                // "inet 0.0.0.0/1" -> interface
+	failAdd  map[string]error                                 // key -> error returned when adding that route
 	fail     func(name string, args []string) (string, error) // optional override, checked first
 }
 

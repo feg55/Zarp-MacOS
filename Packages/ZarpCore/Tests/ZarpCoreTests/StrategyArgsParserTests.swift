@@ -63,6 +63,10 @@ final class StrategyArgsParserTests: XCTestCase {
             args: "--payload=tls_client_hello --lua-desync=fake:blob=tls_google:tcp_md5:repeats=6 --lua-desync=multisplit:pos=1,midsld")
         XCTAssertNotNil(plan.parseIssue)
         XCTAssertEqual(plan.parseIssue?.key, "strategy.unknownFeature")
+        XCTAssertEqual(plan.parseIssue?.args, ["fake:tcp_md5"], "the tooltip should name the raw-socket trick")
+        let seq = StrategyArgsParser.parse(transport: .masqueH2,
+            args: "--payload=tls_client_hello --lua-desync=fake:blob=tls_vk:tcp_seq=-3000:repeats=6 --lua-desync=multidisorder:pos=1,midsld")
+        XCTAssertEqual(seq.parseIssue?.args, ["fake:tcp_seq"])
     }
 
     func testSeqovlIsFlagged() {
