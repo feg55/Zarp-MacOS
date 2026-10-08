@@ -31,7 +31,7 @@ If there is no *Open Anyway* button, remove the quarantine flag:
 xattr -dr com.apple.quarantine /Applications/Zarp.app
 ```
 
-Check the download first if you did not build it yourself: compare `shasum -a 256 Zarp-<version>-arm64.dmg`
+Check the download first if you did not build it yourself: compare `shasum -a 256 ~/Downloads/Zarp-*.dmg`
 with the value in the release notes.
 
 ## The daemon will not install, or says it needs approval
