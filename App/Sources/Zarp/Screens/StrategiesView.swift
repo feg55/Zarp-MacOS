@@ -19,7 +19,7 @@ private struct StrategyRow: Identifiable {
 /// `SettingsForm` (`UI/SettingsForm.cs`'s column setup and `FillList`) and the attached screenshot
 /// of that window — same column order and widths, same ✔ / ✔✔ convention, same row density.
 ///
-/// Backed by real networking through `zarpd`/`ZarpdClient` (docs/ARCHITECTURE.md §9.4) — rows read
+/// Backed by real networking through `zarpd`/`ZarpdClient` (docs/ARCHITECTURE.md §5) — rows read
 /// "not tested" until a Test/Use/scan runs. Strategies this port cannot perform (raw-socket tricks,
 /// WireGuard) read "not available on macOS" with the reason as a tooltip, and are never attempted.
 struct StrategiesView: View {

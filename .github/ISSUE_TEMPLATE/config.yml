@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting guide
+    url: https://github.com/feg55/Zarp-MacOS/blob/main/docs/TROUBLESHOOTING.md
+    about: First-launch blocks, the background service, other VPNs, repairing the network by hand.
+  - name: Report a security vulnerability
+    url: https://github.com/feg55/Zarp-MacOS/security/advisories/new
+    about: Privately, please. Do not open a public issue for a vulnerability.

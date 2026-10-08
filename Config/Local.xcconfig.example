@@ -1,0 +1,11 @@
+// Copy this file to Local.xcconfig (same folder; it is git-ignored) and fill in your own values.
+//
+// DEVELOPMENT_TEAM is the 10-character Team ID of the Apple Development certificate used to sign the
+// app and its embedded daemon. A free "Personal Team" is enough. Find it in Xcode > Settings >
+// Accounts, or with:  security find-identity -v -p codesigning
+// (the ID is in parentheses after the certificate name).
+//
+// Zarp's background daemon is installed with SMAppService, which requires the app and the daemon to be
+// signed by the same team — so a signed build needs this, and an unsigned one cannot install the daemon.
+
+DEVELOPMENT_TEAM = ABCDE12345

@@ -22,12 +22,11 @@ final class LocalizationKeyUsageTests: XCTestCase {
         return walker.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
     }
 
-    func testEveryKeyReferencedFromCodeExistsInEnglishAndRussian() throws {
-        let loc = Localization.load(languageFilesDirectory: repoRoot().appendingPathComponent("Resources/Lang"))
+    /// Key -> the first source file that mentions it, for every key literal in the app's sources.
+    private func keysUsedInCode() throws -> [String: String] {
         let alternation = Self.keyPrefixes.joined(separator: "|")
         let regex = try NSRegularExpression(pattern: "\"((?:\(alternation))\\.[A-Za-z0-9]+(?:\\.[A-Za-z0-9]+)*)\"")
-
-        var used: [String: String] = [:] // key -> first file mentioning it
+        var used: [String: String] = [:]
         let files = swiftFiles(under: "App/Sources") + swiftFiles(under: "Packages/ZarpCore/Sources")
         XCTAssertFalse(files.isEmpty, "found no sources to scan — did the layout change?")
         for file in files {
@@ -39,10 +38,29 @@ final class LocalizationKeyUsageTests: XCTestCase {
             }
         }
         XCTAssertGreaterThan(used.count, 50, "the scan should find the app's many keys; found \(used.count)")
-        for (key, file) in used.sorted(by: { $0.key < $1.key }) {
-            XCTAssertNotNil(loc.raw("en", key), "'\(key)' (used in \(file)) is missing from en.txt")
-            XCTAssertNotNil(loc.raw("ru", key), "'\(key)' (used in \(file)) is missing from ru.txt")
+        return used
+    }
+
+    func testEveryKeyReferencedFromCodeExistsInEveryLanguage() throws {
+        let loc = Localization.load(languageFilesDirectory: repoRoot().appendingPathComponent("Resources/Lang"))
+        for (key, file) in try keysUsedInCode().sorted(by: { $0.key < $1.key }) {
+            for language in Localization.languages {
+                XCTAssertNotNil(loc.raw(language.code, key), "'\(key)' (used in \(file)) is missing from \(language.code).txt")
+            }
         }
+    }
+
+    /// The other direction: a key nothing asks for is dead text that every translator would still have
+    /// to translate. (If a key is ever built at run time rather than written out as a literal, list its
+    /// prefix in `dynamicallyBuiltPrefixes` so it is not reported.)
+    func testNoKeyIsDefinedThatTheCodeNeverUses() throws {
+        let dynamicallyBuiltPrefixes: [String] = []
+        let loc = Localization.load(languageFilesDirectory: repoRoot().appendingPathComponent("Resources/Lang"))
+        let used = Set(try keysUsedInCode().keys)
+        let dead = loc.keys(for: "en").filter { key in
+            !used.contains(key) && !dynamicallyBuiltPrefixes.contains { key.hasPrefix($0) }
+        }
+        XCTAssertEqual(dead.sorted(), [], "defined in the language files but never used by the app")
     }
 
     func testNoEnglishKeyIsAccidentallyDefinedTwice() throws {

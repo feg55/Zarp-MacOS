@@ -79,7 +79,7 @@ func (o *Options) fill() {
 // Serve listens on a Unix domain socket at socketPath and dispatches every request line to
 // handler until ctx is done. One goroutine per connection, one goroutine per request within a
 // connection (so a slow `open` doesn't block a concurrent `status`-style call on the same
-// connection) — requests are independent by design (docs/ARCHITECTURE.md §9.4), there's no
+// connection) — requests are independent by design (docs/ARCHITECTURE.md §5), there's no
 // server-side state that needs per-connection request ordering.
 func Serve(ctx context.Context, socketPath string, handler Handler, opts Options) error {
 	opts.fill()
@@ -92,7 +92,7 @@ func Serve(ctx context.Context, socketPath string, handler Handler, opts Options
 		return fmt.Errorf("listen on %s: %w", socketPath, err)
 	}
 	// The app runs as the logged-in user, not root, so it must be able to connect — but this
-	// daemon is privileged and (once Phase 8 installs it permanently) always running, so the
+	// daemon is privileged and always running (it is installed as a LaunchDaemon), so the
 	// socket must not be reachable by every local process either. 0660 + group `staff` admits any
 	// real interactive user account on a single-user Mac while excluding service/daemon accounts,
 	// which normally aren't in `staff`; AllowPeer then narrows it to the user actually at the

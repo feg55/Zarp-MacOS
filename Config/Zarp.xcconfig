@@ -1,0 +1,7 @@
+// Build settings shared by every Zarp target (project.yml points each configuration at this file).
+//
+// Machine-specific overrides — in practice your Apple Development Team ID — go in Local.xcconfig,
+// which is git-ignored. Copy Local.xcconfig.example to create it. Without one the project still builds
+// (CI does exactly that, unsigned); it just cannot produce a signed app that can install its daemon.
+
+#include? "Local.xcconfig"

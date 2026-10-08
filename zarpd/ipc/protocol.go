@@ -1,4 +1,4 @@
-// Package ipc is the wire protocol between Zarp.app (Swift) and zarpd (docs/ARCHITECTURE.md §9.4):
+// Package ipc is the wire protocol between Zarp.app (Swift) and zarpd (docs/ARCHITECTURE.md §5):
 // newline-delimited JSON over a Unix domain socket, one request per line, one response per line,
 // correlated by ID. Deliberately not gRPC/protobuf for this first cut — no codegen toolchain
 // needed on either the Swift or Go side to get something working end to end, and the message
@@ -18,7 +18,7 @@ import "encoding/json"
 // compares it (PingResult.Protocol) against the version it was built for, so a stale daemon left
 // running after an app update is noticed instead of failing in confusing ways.
 //
-// 1 = Phase 7-8 (open/close/measure/status/ping/restart).
+// 1 = open/close/measure/status/ping/restart.
 // 2 = lazy account registration (register), daemon log pull (logs), full-tunnel routing
 //
 //	(OpenParams.RouteAll/OverrideDNS), error codes, endpoint rotation tokens.
@@ -141,7 +141,7 @@ type LossInfo struct {
 // Strategy is flattened to exactly what zarpd needs to execute it (StrategyArgsParser.parse's
 // output, DesyncPlan, plus the transport), not the whole Swift Strategy struct — except StrategyID,
 // carried through as an opaque label purely so a later "status" call can report back which saved
-// strategy a persistent connection belongs to (ARCHITECTURE.md's GUI/daemon reconciliation notes);
+// strategy a persistent connection belongs to (docs/ARCHITECTURE.md §4, GUI/daemon reconciliation);
 // zarpd never interprets it.
 //
 // Every field is validated (Validate) before anything is dialed: this is a privileged process

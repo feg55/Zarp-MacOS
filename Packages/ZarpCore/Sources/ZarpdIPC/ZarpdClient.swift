@@ -3,7 +3,7 @@ import Foundation
 import ZarpCore
 
 /// `WarpConnectionProvider` + `WarpProbe` implementation talking to `zarpd` over the Unix domain
-/// socket IPC described in `docs/ARCHITECTURE.md` §9.4 / `zarpd/ipc/protocol.go`: newline-delimited
+/// socket IPC described in `docs/ARCHITECTURE.md` §5 / `zarpd/ipc/protocol.go`: newline-delimited
 /// JSON, one request per line, one response per line. Each call opens its own short-lived
 /// connection (connect, send one line, read one line, close) rather than multiplexing several
 /// requests over one persistent connection — simpler, and call frequency here (scan/connect

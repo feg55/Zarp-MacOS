@@ -1,0 +1,53 @@
+name: Strategy report
+description: Share which strategies work (or do not) on your network
+title: "[Strategy] "
+labels: ["strategy-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Which strategies get through depends on the network, so results from different providers are valuable. Run a **Full scan** (Settings) with every other VPN off, then tell us what it found.
+        Do not paste your WARP account file or anything from `/Library/Application Support/Zarp`.
+  - type: input
+    id: isp
+    attributes:
+      label: Provider and country
+      placeholder: "ExampleNet, Germany"
+    validations:
+      required: true
+  - type: dropdown
+    id: network
+    attributes:
+      label: What kind of network?
+      options:
+        - Home broadband
+        - Public Wi-Fi
+        - Mobile network or hotspot
+        - Office, school or university
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Zarp version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: works
+    attributes:
+      label: Strategies that worked
+      description: The ones marked ✔✔ or "works (1 check)", with their connect and ping times if you have them.
+    validations:
+      required: true
+  - type: textarea
+    id: fails
+    attributes:
+      label: Strategies that did not work, and what you saw
+      description: Anything notable in the Result column, or in the log.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Does the plain "Direct connection" strategy work? Does it change with the time of day or the network?

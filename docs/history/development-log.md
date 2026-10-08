@@ -1,6 +1,15 @@
-# Zarp for macOS: implementation plan
+# Zarp for macOS: development log
 
-> **Rewritten 2026-09-26** for the architecture pivot in [ARCHITECTURE.md](ARCHITECTURE.md) (Zarp
+> **Historical record.** This is the phase-by-phase log of how Zarp for macOS was built and what was
+> verified on a real Mac at each step, written while the work was going on. It is kept because the
+> evidence matters (what was measured, what turned out wrong), but it is not documentation: read
+> [../ARCHITECTURE.md](../ARCHITECTURE.md) for the current design. Section numbers like "§9.3" below refer
+> to [design-notes.md](design-notes.md), the architecture document as it stood at the time. The
+> proof-of-concept programs the early phases mention (`tunpoc`, `warppoc`, `dialpoc`, `tunnelpoc`) and the
+> rejected `PoC/Filter` prototype were removed from the tree before the first release; they are in git history
+> at commit `da9ba42`.
+
+> **Rewritten 2026-09-26** for the architecture pivot in [design-notes.md](design-notes.md) (Zarp
 > owns the WARP connection itself, via a `zarpd` daemon built on the Go dependencies Zarp-Android's
 > `zarpcore` uses). The old phase list (NEFilterPacketProvider system extension + root injector
 > helper) is kept at the bottom, marked superseded, for the record — phase 1 of it is genuinely
@@ -23,7 +32,7 @@ Verified on a real Mac, not assumed:
   in 7 non-English language files for the one key that's a live macOS feature.
 
 This phase's outcome doesn't change with the architecture pivot — `ZarpCore` and the UI are
-unaffected (see `ARCHITECTURE.md` §2–§6). What changes is everything after it.
+unaffected (see `design-notes.md` §2–§6). What changes is everything after it.
 
 ## Phase 2 — CLI prototype: open a real utun, move packets, close cleanly — DONE (2026-09-26)
 
@@ -33,7 +42,7 @@ Apple entitlements, System Extensions, or SIP changes? **Yes, confirmed on this 
 
 Delivered: `zarpd/` (Go module, `golang.zx2c4.com/wireguard`'s `tun.CreateTUN` — the same package
 Android's `zarpcore` depends on, its real-device constructor rather than `netstack.CreateNetTUN`,
-see `ARCHITECTURE.md` §9.1) and `zarpd/cmd/tunpoc`, which opens a utun, assigns it a
+see `design-notes.md` §9.1) and `zarpd/cmd/tunpoc`, which opens a utun, assigns it a
 point-to-point IPv4 address via `ifconfig`, reads packets for a fixed duration logging each one,
 answers ICMP echo requests from its peer address (a real write, not just a read — see below for
 why that matters), and closes the device.
@@ -69,15 +78,15 @@ both use to confirm a working tunnel.
 
 Delivered:
 - `zarpd/warp`: account registration and MASQUE/HTTP3 dial, built directly on upstream `usque`
-  (not Android's GPL-3.0 `zarpcore` — `ARCHITECTURE.md` §8). Verified standalone first
+  (not Android's GPL-3.0 `zarpcore` — `design-notes.md` §8). Verified standalone first
   (`warppoc`/`dialpoc`, no root needed) before combining with anything privileged.
 - `zarpd/tunnel`: pumps packets between a real utun (`Read`/`Write`, 4-byte headroom, phase 2) and
   the MASQUE session's `connectip.Conn` (`WritePacketBuffer`/`ReadPacketZeroCopy`) directly — no
-  userspace netstack, no local SOCKS5 proxy, unlike Android (`ARCHITECTURE.md` §9.1).
+  userspace netstack, no local SOCKS5 proxy, unlike Android (`design-notes.md` §9.1).
 - `zarpd/route`: `CurrentDefault()` (shells out to `route -n get default`, the same pragmatic
   choice as `ifconfig` for address config) plus `BindUDP` (`IP_BOUND_IF`/`IPV6_BOUND_IF`) —
   confirmed to actually prevent the WARP control socket from looping back into its own tunnel,
-  which was `ARCHITECTURE.md` §9.3's open question. `AddHostRoute`/`DeleteHostRoute` for now (a
+  which was `design-notes.md` §9.3's open question. `AddHostRoute`/`DeleteHostRoute` for now (a
   single narrow route, not the default route — see below).
 - `zarpd/cmd/tunnelpoc` ties it together and was run as root on this Mac: registered account →
   bind WARP socket to the physical interface → MASQUE dial → open utun → route exactly one test
@@ -162,7 +171,7 @@ expose a checksum override; revisit only if the simpler strategies aren't enough
 `zarpd/warp.DialH2` (MASQUE over HTTP/2 — TCP dial via a `*net.Dialer` bound to the physical
 interface through `route.Physical.Control`, same job as `BindUDP` does for `DialH3`) and
 `zarpd/warp.NewDesyncConn`/`ParseDesync` (the TLS ClientHello split/disorder wrapper — see
-`ARCHITECTURE.md` §9.2 and §8 for why reimplemented directly rather than adapted from Android's
+`design-notes.md` §9.2 and §8 for why reimplemented directly rather than adapted from Android's
 `desync.go`) are both written and exercised on this Mac's real network.
 
 **A genuinely useful finding, not the result expected going in:** unlike QUIC/UDP (actively
@@ -203,7 +212,7 @@ meant anything.
 
 - `ZarpdClient` (`App/Sources/Zarp/ZarpdClient.swift`): a `WarpConnectionProvider` + `WarpProbe`
   implementation (`EngineProtocols.swift`) that talks to `zarpd` over the newline-delimited-JSON
-  Unix socket IPC (`zarpd/ipc`, `ARCHITECTURE.md` §9.4), replacing `Unimplemented*`. `AppViewModel`
+  Unix socket IPC (`zarpd/ipc`, `design-notes.md` §9.4), replacing `Unimplemented*`. `AppViewModel`
   now defaults `connections`/`probe` to it instead of the unimplemented placeholders.
 - `ZarpEngine`'s Connect/Quick Scan/Full Scan/self-healing logic needed zero changes — it was
   written against the `WarpConnectionProvider`/`WarpProbe` protocols, not any concrete backend, so
@@ -337,7 +346,7 @@ themselves.
 
 **The load-bearing question, checked before writing anything else:** does `SMAppService.daemon`
 registration actually work under this Mac's free "Personal Team" signing identity, the way
-NetworkExtension turned out not to (`ARCHITECTURE.md` §10)? **Yes, confirmed for real** — unlike
+NetworkExtension turned out not to (`design-notes.md` §10)? **Yes, confirmed for real** — unlike
 Network Extensions, `SMAppService` needs no special provisioning-profile capability from Apple at
 all; it only needs the daemon and the app to share a Team ID, which any signing identity gives you.
 
@@ -481,7 +490,7 @@ phase — the free Personal Team signing that made `SMAppService` work does not 
 
 Decision (user, 2026-10-06): there is no paid Apple Developer Program membership, so no
 notarization and no Developer ID — ship an Apple-Development-signed, **unnotarized** DMG and let
-users clear Gatekeeper once. Same constraint that ruled out NetworkExtension (`ARCHITECTURE.md`
+users clear Gatekeeper once. Same constraint that ruled out NetworkExtension (`design-notes.md`
 §10); `SMAppService.daemon` stays viable because it only needs the app and daemon to share a Team ID.
 
 ### `scripts/package.sh`
@@ -508,7 +517,7 @@ binaries' `LC_BUILD_VERSION minos` read 14.0, matching `LSMinimumSystemVersion`.
 ### Verified on the finished artifact (independent of the script's own checks)
 
 Mounted the DMG separately and inspected it: contents as above; only `Zarp` and `zarpd` under
-`Contents/MacOS` (no `Zarp.debug.dylib`/`__preview.dylib`); `TeamIdentifier=G86X3LK72R` with
+`Contents/MacOS` (no `Zarp.debug.dylib`/`__preview.dylib`); `TeamIdentifier=<the developer's Team ID>` with
 hardened-runtime flag on the app; `minos` 14.0 on both binaries; `spctl --assess --type execute`
 → **`rejected`** (exit 3), which is Gatekeeper's expected verdict for an unnotarized build and
 exactly why the first-run steps exist. A full from-scratch Release build + packaging takes ~30 s.
@@ -554,7 +563,7 @@ has been run by someone with the VPN off.**
 
 1. **"Connected" only routed `1.1.1.1`** (Phase 7 scope, but the UI and DMG presented it as a finished
    VPN). A persistent connection is now a *full tunnel*: `0/1` + `128/1` (+ IPv6 `::/1` + `8000::/1`) bound
-   to the utun, DNS overridden with a crash-safe backup (ARCHITECTURE.md §11). The settings toggle "Route
+   to the utun, DNS overridden with a crash-safe backup (design-notes.md §11). The settings toggle "Route
    all traffic through WARP" turns it off (diagnostic mode, labelled as such in the status line).
    *Verified: unit tests of the exact commands, their order, rollback on failure, DNS backup/restore and
    crash recovery against a fake system. **Real Mac, 2026-10-08: verified by `scripts/test-integration.sh`
@@ -603,7 +612,7 @@ VPN **off**.
   - **Run 1:** 26 passed, 5 failed, 1 skipped. Narrow test connections, validation, the file-descriptor fix
     (11 → 11 across 15 failed dials), orphan takeover and lease reaping all worked; the **full tunnel died
     immediately** — `IP_BOUND_IF` alone does not keep the control socket off the `/1` routes
-    (`ENETUNREACH`, `ARCHITECTURE.md` §9.3). Fixed with a journaled endpoint exclusion route
+    (`ENETUNREACH`, `design-notes.md` §9.3). Fixed with a journaled endpoint exclusion route
     (`zarpd/route/exclusion.go`).
   - **Run 2:** 56 passed, 0 failed, 0 skipped, machine state OK. Covers the full tunnel (IPv4 + IPv6
     traffic on WARP, 8 MB download at ~0.97 MB/s, example.com 200), the DNS override and its exact restore,
@@ -633,17 +642,17 @@ VPN **off**.
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| `IP_BOUND_IF`/route-exclusion doesn't cleanly prevent a loop (`ARCHITECTURE.md` §9.3) | WARP control traffic gets routed back into its own tunnel, connection can't establish | Phase 3's exit criteria specifically tests this with real traffic before building anything on top |
+| `IP_BOUND_IF`/route-exclusion doesn't cleanly prevent a loop (`design-notes.md` §9.3) | WARP control traffic gets routed back into its own tunnel, connection can't establish | Phase 3's exit criteria specifically tests this with real traffic before building anything on top |
 | utun creation needs more privilege/entitlement than expected | Blocks phase 2 outright | Phase 2 is deliberately the very first thing tried, before any WARP/MASQUE code exists to waste |
 | MASQUE dial works but real utun packet pumping has framing/MTU issues netstack would have hidden | Silent packet loss or corruption | Phase 3's exit criteria requires real traffic, not just a successful handshake |
-| Reimplementing (not copying) Android's dial/desync logic introduces subtle bugs the proven code didn't have | Wasted debugging time | Reference Android's code closely while writing macOS's version (`ARCHITECTURE.md` §9.2 documents exactly what's being reimplemented and why), and verify each phase's exit criteria with real network captures, not just "connects" |
+| Reimplementing (not copying) Android's dial/desync logic introduces subtle bugs the proven code didn't have | Wasted debugging time | Reference Android's code closely while writing macOS's version (`design-notes.md` §9.2 documents exactly what's being reimplemented and why), and verify each phase's exit criteria with real network captures, not just "connects" |
 | User runs another VPN | Routing conflicts | Detect and warn, same spirit as Windows' `IsForeignVpnAdapter` check — design once phase 7's `NetworkInspector` is written |
 
 ---
 
 ## Superseded: NEFilterPacketProvider / System Extension plan (kept for the record)
 
-This was the plan before the 2026-09-26 pivot (`ARCHITECTURE.md` §10). Phase 1 below is the same
+This was the plan before the 2026-09-26 pivot (`design-notes.md` §10). Phase 1 below is the same
 phase 1 above (unaffected by the pivot). Phases past it were **rejected**, not merely deprioritized
 — a free Apple Developer "Personal Team" account was confirmed, empirically, unable to get the
 Network Extensions or System Extension capability at all, and the only ways past that (a paid
@@ -654,7 +663,7 @@ functionality. Nothing past phase 1 below will be built; kept only so the reason
 ### Phase 1 — research (done)
 
 - `_reference/` with the 4 upstream repositories (ignored by git).
-- `docs/MACOS_NETWORK_RESEARCH.md`, `docs/ARCHITECTURE.md`, this file (all now superseded/rewritten).
+- `network-research.md`, `design-notes.md`, this file (all now superseded/rewritten).
 
 ### Phase 2 (superseded) — network PoC: can we see and hold the WARP handshake?
 
@@ -668,6 +677,6 @@ signing error above; `PoC/Helper` and `PoC/App`'s CLI were never started.
 ### Phases 3–8 (superseded)
 
 One working QUIC strategy end-to-end via packet delay+injection, full strategy engine, UI
-(already done independently of this — see phase 1 above and `ARCHITECTURE.md` §5), Quick/Full
+(already done independently of this — see phase 1 above and `design-notes.md` §5), Quick/Full
 Scan polish, self-healing, settings/logs/localization (also already done), packaging and signing.
 None of these were reached; the architecture they were designed for is rejected.

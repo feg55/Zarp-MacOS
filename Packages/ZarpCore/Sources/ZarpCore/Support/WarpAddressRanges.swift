@@ -5,7 +5,7 @@
 /// This is informational (settings text, endpoint validation, log messages, test-endpoint
 /// selection). It is not a filter rule and nothing here inspects or touches live traffic —
 /// that boundary is defined by the protocols in `Engine/EngineProtocols.swift` and belongs to
-/// the platform-specific implementation described in `docs/MACOS_NETWORK_RESEARCH.md`.
+/// the daemon (`docs/ARCHITECTURE.md` §1).
 public enum WarpAddressRanges {
     public static let ranges: [(low: IPAddress, high: IPAddress)] = [
         ("162.159.192.0", "162.159.199.255"),

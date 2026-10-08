@@ -1,17 +1,17 @@
 # macOS network research: can Zarp work beside the official WARP client?
 
-> **SUPERSEDED 2026-09-26.** This whole document researches the "intercept the official WARP
+> **Historical record. SUPERSEDED 2026-09-26.** This whole document researches the "intercept the official WARP
 > client's traffic" architecture. That approach is **rejected**, not merely paused: see
-> [ARCHITECTURE.md](ARCHITECTURE.md) §10 for why, and §9 for the research that replaces it (Zarp
+> [design-notes.md](design-notes.md) §10 for why, and §9 for the research that replaces it (Zarp
 > owns the WARP connection itself, modeled on Zarp-Android's `zarpcore`). The findings below are
 > kept as a historical record — several of them (the NEFilterPacketProvider API shape, the free
 > Personal Team account-tier gating, `IP_BOUND_IF`) turned out to still matter for the new
 > architecture and are cross-referenced from there. Nothing below should be treated as describing
-> current or planned behavior; `docs/IMPLEMENTATION_PLAN.md` no longer follows this document's
+> current or planned behavior; `development-log.md` no longer follows this document's
 > phase 1.
 
 Status: research done, PoC (`PoC/Filter`) wired far enough to get a definitive answer (see
-[ARCHITECTURE.md](ARCHITECTURE.md) §10) — then the whole architecture was rejected before finishing
+[design-notes.md](design-notes.md) §10) — then the whole architecture was rejected before finishing
 it. Everything under "Confirmed" has a source. Everything under "Open questions" was meant to be
 settled by the PoC before the full app was built on this design; most no longer will be.
 
@@ -195,7 +195,7 @@ both and logs the result.
   provisioning server, not just documentation, when actually trying to build `PoC/Filter`'s minimal
   `ZarpFilter` target with entitlements set correctly:
   `Cannot create a Mac App Development provisioning profile for "io.github.zarp.mac.filter". Personal
-  development teams, including "feg55", do not support the Network Extensions capability.`
+  development teams, including the developer's own team, do not support the Network Extensions capability.`
   (and similarly for the app target's `system-extension.install`). Matches Apple's "Supported
   capabilities (macOS)" reference table and multiple Apple DTS forum answers. Xcode's own signing
   phase also refuses to ad-hoc-sign (`CODE_SIGN_IDENTITY=-`) a target with these entitlements at all —

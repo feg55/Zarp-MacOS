@@ -1,6 +1,6 @@
 // Package warp registers and connects a WARP MASQUE account, built directly on usque
 // (github.com/Diniboy1123/usque, MIT) rather than on Zarp-Android's zarpcore (GPL-3.0) — see
-// docs/ARCHITECTURE.md §8 for why. account.go mirrors Android's account.go, whose sequence has no
+// docs/ARCHITECTURE.md §11 for why. account.go mirrors Android's account.go, whose sequence has no
 // Android-specific dependency at all: it's a thin wrapper around usque/api calls.
 package warp
 

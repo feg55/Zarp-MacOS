@@ -1,0 +1,71 @@
+name: Bug report
+description: Zarp does not work as it should
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Please check [docs/TROUBLESHOOTING.md](https://github.com/feg55/Zarp-MacOS/blob/main/docs/TROUBLESHOOTING.md) first: it covers the usual first-launch and "no strategy works" problems.
+        **Do not paste your WARP account file** (`/Library/Application Support/Zarp/zarp-warp-config.json`): it contains a private key.
+        For a security problem, do not use this form: see the [security policy](https://github.com/feg55/Zarp-MacOS/security/policy).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what did you get instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Zarp version
+      description: "Shown under *Zarp > About Zarp*, or run `defaults read /Applications/Zarp.app/Contents/Info CFBundleShortVersionString`."
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac model
+      placeholder: "macOS 15.6, MacBook Air M2"
+    validations:
+      required: true
+  - type: dropdown
+    id: network
+    attributes:
+      label: What kind of network?
+      options:
+        - Home Wi-Fi
+        - Public Wi-Fi
+        - Mobile hotspot or tethering
+        - Ethernet
+        - Office, school or university
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: isp
+    attributes:
+      label: Provider and country (optional)
+      description: Whether a strategy works depends on the DPI between you and Cloudflare, so this helps a lot. Share only what you are comfortable with.
+      placeholder: "ExampleNet, Germany"
+  - type: textarea
+    id: strategy
+    attributes:
+      label: Strategy and result (optional)
+      description: Which strategy was selected, and what the Result column says for the strategies you tried.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      description: |
+        The lines around the problem from the log view in the main window, or from `~/Library/Logs/Zarp/zarp.log`. For a daemon problem add `/Library/Logs/Zarp/zarpd.log`. The logs contain WARP endpoint addresses and strategy names, nothing about the sites you visit; remove anything you would rather not share.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: Any other VPN and Cloudflare's own WARP app were off.
+        - label: I looked for an existing issue about this.

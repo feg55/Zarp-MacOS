@@ -2,18 +2,30 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request makes the older run pointless.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
+    name: Go, Swift and the app build
     # Apple Silicon: the daemon is arm64-only and uses macOS-only APIs (utun, IP_BOUND_IF).
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: zarpd/go.mod
+          cache-dependency-path: zarpd/go.sum
 
       - name: Go — format, vet, tests (race detector)
         working-directory: zarpd
@@ -22,12 +34,15 @@ jobs:
           go vet ./...
           go test -race -count=1 ./...
 
-      - name: Swift — ZarpCore tests
+      - name: Swift — ZarpCore and ZarpdIPC tests
         working-directory: Packages/ZarpCore
         run: swift test
 
       - name: Third-party notices are current
         run: scripts/gen-notices.sh --check
+
+      - name: Documentation links resolve
+        run: python3 scripts/check-docs.py
 
       - name: The app builds (unsigned)
         run: |
