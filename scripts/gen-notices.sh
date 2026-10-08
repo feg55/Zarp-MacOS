@@ -1,6 +1,7 @@
 #!/bin/bash
 # Regenerates Resources/Licenses/THIRD_PARTY_NOTICES.md: the notices that must accompany the
-# distributed binaries. MIT and BSD licenses require the copyright notice and license text to be
+# distributed binaries (and keeps Resources/Licenses/Zarp-macOS-LICENSE.txt, the copy of the
+# project's own LICENSE that goes into the app bundle, in sync with the one at the repository root). MIT and BSD licenses require the copyright notice and license text to be
 # included in binary distributions, and zarpd statically links every Go module listed here.
 #
 #   scripts/gen-notices.sh            # rewrite the file
@@ -14,6 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 OUT="$ROOT/Resources/Licenses/THIRD_PARTY_NOTICES.md"
+LICENSE_COPY="$ROOT/Resources/Licenses/Zarp-macOS-LICENSE.txt"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin:$PATH"
 export GOOS=darwin GOARCH=arm64 CGO_ENABLED=1
 
@@ -37,6 +39,8 @@ generate() {
 Zarp for macOS is an independent project, not affiliated with or endorsed by Cloudflare, Inc.
 Cloudflare and WARP are trademarks of Cloudflare, Inc. It contains no Cloudflare software: it
 talks to Cloudflare's public WARP service through the open-source components listed below.
+
+Zarp for macOS itself is released under the MIT License (Zarp-macOS-LICENSE.txt, next to this file).
 
 The app bundle contains:
 
@@ -98,12 +102,13 @@ trap 'rm -f "$TMP"' EXIT
 generate > "$TMP"
 
 if [[ "${1:-}" == "--check" ]]; then
-  if ! cmp -s "$TMP" "$OUT"; then
-    echo "Resources/Licenses/THIRD_PARTY_NOTICES.md is out of date: run scripts/gen-notices.sh" >&2
-    exit 1
-  fi
+  ok=1
+  cmp -s "$TMP" "$OUT" || { echo "Resources/Licenses/THIRD_PARTY_NOTICES.md is out of date: run scripts/gen-notices.sh" >&2; ok=0; }
+  cmp -s "$ROOT/LICENSE" "$LICENSE_COPY" || { echo "Resources/Licenses/Zarp-macOS-LICENSE.txt differs from LICENSE: run scripts/gen-notices.sh" >&2; ok=0; }
+  [[ $ok -eq 1 ]] || exit 1
   exit 0
 fi
 
 install -m 644 "$TMP" "$OUT"
-echo "wrote ${OUT#"$ROOT"/} ($(wc -c < "$OUT" | tr -d ' ') bytes, $(grep -c '^## ' "$OUT") sections)"
+install -m 644 "$ROOT/LICENSE" "$LICENSE_COPY"
+echo "wrote ${OUT#"$ROOT"/} ($(wc -c < "$OUT" | tr -d ' ') bytes, $(grep -c '^## ' "$OUT") sections) and ${LICENSE_COPY#"$ROOT"/}"

@@ -3,7 +3,7 @@ package warp
 // dial.go's sequence follows usque/api.ConnectTunnel's own connectTunnelHTTP3 (MIT,
 // github.com/Diniboy1123/usque/api/masque.go) with one deliberate difference: it takes an
 // already-open *net.UDPConn instead of creating one with net.ListenUDP. That's the whole point —
-// docs/ARCHITECTURE.md §9.2 — a strategy gets to send fake packets on that socket, bound to the
+// docs/ARCHITECTURE.md §3 — a strategy gets to send fake packets on that socket, bound to the
 // physical interface, before this function ever touches it, so the real QUIC Initial leaves
 // through the identical 5-tuple as the fakes.
 
@@ -247,7 +247,7 @@ func DialH2(sessionCtx, dialCtx context.Context, dialer *net.Dialer, endpoint *n
 	client := &http.Client{Transport: transport}
 	headers := http.Header{"User-Agent": []string{""}}
 	headers.Set("cf-connect-proto", "cf-connect-ip")
-	headers.Set("pq-enabled", "false") // TODO: post-quantum, once PQC is verified to work over H2 here
+	headers.Set("pq-enabled", "false") // post-quantum key exchange is not requested over H2 until it is verified to work here
 	template := uritemplate.MustNew(connectURI)
 
 	fail := func(err error) (*Session, error) {

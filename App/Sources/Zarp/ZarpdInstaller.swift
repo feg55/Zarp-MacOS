@@ -8,7 +8,7 @@ import ZarpCore
 /// script phase: `Contents/MacOS/zarpd` + `Contents/Library/LaunchDaemons/*.plist`) and shares this
 /// app's own code-signing Team ID, which is what lets `register()` work at all — confirmed for
 /// real on a free "Personal Team" identity, no paid Apple Developer Program membership needed
-/// (docs/IMPLEMENTATION_PLAN.md Phase 8).
+/// (docs/ARCHITECTURE.md §7).
 ///
 /// `register()` triggers the OS's own authorization UI (a one-time admin password/Touch ID prompt,
 /// then — on first install — a "background item added" notification the user approves once in
@@ -78,7 +78,7 @@ final class ZarpdInstaller: ObservableObject {
         #endif
     }
 
-    /// Unregisters the daemon (Phase 8's "clean uninstall"). Idempotent — unregistering something
+    /// Unregisters the daemon (the "clean uninstall"). Idempotent — unregistering something
     /// already unregistered is not treated as an error by `SMAppService` itself.
     func uninstall() throws {
         try service.unregister()

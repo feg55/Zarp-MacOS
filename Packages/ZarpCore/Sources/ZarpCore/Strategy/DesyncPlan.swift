@@ -32,10 +32,8 @@ public struct TCPDesyncStep: Hashable, Sendable {
 
 /// What a strategy's `args` string asks for, parsed from winws2 profile syntax by
 /// `StrategyArgsParser`. This only *describes* the request — which blob, how many times, what
-/// TTL, where to split a ClientHello. It says nothing about whether macOS can currently carry any
-/// of it out; that is tracked separately by `StrategyReadiness`, which stays "pending" for every
-/// built-in strategy until the real-Mac proof of concept (`docs/IMPLEMENTATION_PLAN.md` phases
-/// 1–2) confirms it.
+/// TTL, where to split a ClientHello. It says nothing about whether the daemon can carry any of it
+/// out; that is `StrategyReadiness` (and `Strategy.unsupportedReason`).
 public struct DesyncPlan: Hashable, Sendable {
     public var fakeSteps: [FakeStep] = []
     public var tcpDesync: TCPDesyncStep?

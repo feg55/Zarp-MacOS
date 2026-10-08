@@ -1,0 +1,8 @@
+# Binary assets: never diffed or merged as text.
+*.bin binary
+*.png binary
+*.dmg binary
+
+# Keep GitHub's language statistics about the code: bundled notices and the development history are not it.
+Resources/Licenses/** linguist-vendored
+docs/history/** linguist-documentation

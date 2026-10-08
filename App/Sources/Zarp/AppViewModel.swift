@@ -8,7 +8,7 @@ import ZarpdIPC
 /// Bridges the `ZarpEngine` actor (plus `Localization` and `LogBus`) to SwiftUI state, and owns
 /// the concrete wiring the App target is responsible for.
 ///
-/// `connections`/`probe` default to `ZarpdClient` (docs/ARCHITECTURE.md §9.4, `zarpd/ipc`) — real
+/// `connections`/`probe` default to `ZarpdClient` (docs/ARCHITECTURE.md §5, `zarpd/ipc`) — real
 /// IPC to the `zarpd` LaunchDaemon, installed from Settings via `SMAppService`
 /// (`ZarpdInstaller.swift`). `network` is `SystemNetworkInspector`, the real foreign-VPN check.
 ///

@@ -411,7 +411,7 @@ func (m *Manager) logs(raw json.RawMessage) (any, error) {
 	return ipc.LogsResult{Lines: lines, Next: next, Dropped: dropped}, nil
 }
 
-// restart is Phase 8's answer to "restart" for a root LaunchDaemon that the unprivileged app
+// restart is how the app restarts a root LaunchDaemon that the unprivileged app
 // cannot itself start or stop (launchd's own security boundary — no `sudo`/root needed from the
 // app's side is the whole point): closes every live connection cleanly, acknowledges the request,
 // then — from a separate goroutine, after a short delay so the acknowledgement actually reaches

@@ -1,7 +1,7 @@
 # Zarp: español. Las claves coinciden con en.txt.
 
 # ---- ventana principal
-main.subtitle = Cloudflare WARP sobre zapret2
+main.subtitle = Cloudflare WARP para redes que lo bloquean
 main.settingsTip = Ajustes y estrategia
 main.languageTip = Idioma
 main.logShow = Registro ▾
@@ -17,7 +17,7 @@ status.disconnected = Desconectado
 
 hint.cancel = Pulsa el botón para cancelar
 hint.disconnect = Pulsa para desconectar
-hint.firstRun = Pulsa y Zarp encontrará la estrategia de zapret2 más rápida y conectará WARP
+hint.firstRun = Pulsa y Zarp encontrará la estrategia más rápida que funcione en tu red y conectará WARP
 hint.connect = Pulsa para conectar. Puedes cambiar la estrategia en los ajustes ⚙
 
 tray.open = Abrir
@@ -26,35 +26,24 @@ tray.exit = Salir
 tray.cancel = Cancelar
 tray.connect = Conectar
 tray.disconnect = Desconectar
-tray.bgTitle = Zarp sigue funcionando en segundo plano
-tray.bgText = Está en la bandeja del sistema. Para salir: clic derecho → Salir.
 
 # ---- diálogos
-dlg.antivirus = El antivirus (normalmente Windows Defender) bloqueó los archivos de zapret2.\n\nEs un falso positivo conocido del controlador WinDivert, que zapret usa para interceptar el tráfico.\n\n¿Añadir la carpeta a las exclusiones de Windows Defender y volver a intentarlo?\n\n{0}
-dlg.vpn = Hay otra VPN activa:\n\n{0}\n\nEl tráfico de WARP pasará por ella y zapret no podrá actuar sobre él: WARP puede no conectarse y la estrategia elegida será incorrecta.\n\nEs mejor desactivar esa VPN. ¿Continuar de todos modos?
-dlg.defender = ¿Añadir la carpeta de zapret2 a las exclusiones de Windows Defender?\n\n{0}
-dlg.otherCopy = Ya se está ejecutando otra copia de Zarp:\n\n{0}\n\n¿Cerrarla y abrir esta? Si WARP está conectado, Zarp lo volverá a conectar.
-dlg.otherCopies = Ya se están ejecutando otras copias de Zarp:\n\n{0}\n\n¿Cerrarlas y abrir esta? Si WARP está conectado, Zarp lo volverá a conectar.
-dlg.otherCopyFailed = No se pudo cerrar la otra copia de Zarp. Ciérrala desde su icono en la bandeja y vuelve a abrir Zarp.
+dlg.vpn = Hay otra VPN activa:\n\n{0}\n\nLa conexión WARP de Zarp pasaría por ella (o competiría con ella por las mismas rutas), así que una búsqueda mediría algo que no es y no se podría crear un túnel completo.\n\nEs mejor desactivar esa VPN. ¿Continuar de todos modos?
 
 close.caption = Cerrar Zarp
 close.question = ¿Qué hacer al cerrar la ventana?
-close.trayInfo = En la bandeja, Zarp sigue funcionando en segundo plano.
+close.trayInfo = En la barra de menús, Zarp sigue funcionando en segundo plano.
 close.exitDisconnects = Al salir, WARP se desconectará.
 close.exitKeeps = Al salir, WARP seguirá conectado.
 close.remember = Recordar mi elección
 close.hint = Puedes cambiarlo en los ajustes.
-close.toTray = Ocultar en la bandeja
+close.toTray = Ocultar en la barra de menús
 close.exit = Salir de la app
 
 # ---- ajustes
-settings.caption = Ajustes de Zarp
 settings.strategy = Estrategia
 settings.explain = Doble clic o «Usar» activa la estrategia. ✔ actual, ✔✔ superó dos comprobaciones independientes.
 settings.options = Opciones
-settings.checking = Comprobando...
-settings.zapretMissing = no instalado
-settings.updatePending = , la actualización se aplicará al conectar
 settings.directTip = WARP sin zapret
 col.strategy = Estrategia
 col.protocol = Protocolo
@@ -70,21 +59,16 @@ tip.quickScan = Se detiene al encontrar {0} estrategias válidas (se ajusta en O
 tip.fullScan = Prueba las {0} estrategias. Tarda más, pero no omite ninguna
 btn.custom = Estrategias propias...
 btn.dataFolder = Carpeta de datos
-btn.defender = Exclusión Defender
-btn.checkUpdates = Buscar actualizaciones
 btn.licenses = Licencias
-btn.close = Cerrar
 opt.autoConnect = Conectar al iniciar Zarp
 opt.autostart = Iniciar con macOS
 opt.onClose = Al cerrar:
 opt.closeAsk = Preguntar siempre
-opt.closeTray = Ocultar en la bandeja
+opt.closeTray = Ocultar en la barra de menús
 opt.closeExit = Salir de la app
 opt.closeAccessible = Acción al cerrar la ventana
 opt.disconnectOnExit = Desconectar WARP al salir
-opt.restrict = Interceptar solo direcciones de WARP
 opt.isolate = Aislar pruebas (nuevo endpoint en cada una)
-opt.autoUpdate = Actualizar zapret2 automáticamente
 opt.timeout = Espera de conexión, s
 opt.stopAfter = Búsqueda rápida: cuántas\nestrategias válidas buscar
 
@@ -94,65 +78,36 @@ result.works1 = funciona (1 prueba)
 result.notConfirmed = no confirmada: {0}
 result.applyFailed = no conectó al aplicarla
 
-strategy.direct = Sin zapret (conexión directa)
+strategy.direct = Conexión directa (sin desync)
 
 # ---- línea de estado
 detail.disconnecting = Desconectando...
 detail.disconnected = Desconectado
-detail.noWarp = Cloudflare WARP no está instalado
 detail.strategy = Estrategia: {0}
 detail.noStrategy = Aún no hay estrategia elegida
-detail.warpConnected = WARP conectado
 detail.cancelled = Cancelado
 detail.error = Error: {0}
 detail.preparing = Preparando...
 detail.vpnOff = Desactiva la otra VPN
 detail.registerFailed = No se pudo registrar WARP
-detail.avBlocked = El antivirus bloqueó zapret2
-detail.downloadFailed = No se pudo descargar zapret2
 detail.testing = {0}/{1}: {2}
 detail.rechecking = Nueva comprobación {0}/{1}: {2}
 detail.notFound = No se encontró una estrategia que funcione
 detail.foundButFailed = Se encontraron estrategias, pero no se pudo conectar
 detail.connectingTo = Conectando: {0}
-detail.winwsFailed = Error al iniciar winws2
 detail.connectFailed = No se pudo conectar
-
-progress.findRelease = Buscando la última versión de zapret2...
-progress.downloading = Descargando zapret2 {0}...
-progress.installed = zapret2 instalado.
 
 # ---- errores de las pruebas
 err.timeout = sin conexión en {0} s
 err.noTraffic = WARP está conectado, pero el tráfico no pasa por él
-err.zapretMissing = zapret2 no está instalado
-err.winwsStart = No se pudo iniciar winws2: {0}
-err.winwsExited = winws2 se cerró: {0}
-err.winwsExitedSilent = winws2 se cerró sin mensajes (puede que el antivirus bloquee WinDivert)
-err.avBlockedFile = El antivirus bloqueó el archivo {0}
-err.filesMissing = Faltan archivos de zapret2 tras la extracción (puede que el antivirus los haya borrado).
-err.noZipAsset = La versión {0} no tiene archivo zip.
 
 # ---- registro
-log.started = Zarp iniciado: {0}
-log.exited = Zarp cerrado
-log.handover = Otra copia de Zarp pidió cerrar esta: liberando WARP y winws2.
 log.savedFailed = La estrategia guardada «{0}» no funcionó, probando otras verificadas.
 log.verifiedFailed = Las estrategias verificadas no funcionaron, buscando de nuevo.
-log.notExtracted = zapret2 aún no está extraído: {0}
-log.updateCheckFailed = Falló la búsqueda de actualizaciones de zapret2: {0}
-log.upToDate = zapret2 {0} es la última versión.
-log.updateDownloaded = Descargado zapret2 {0}.
-log.updateOnConnect = La actualización se aplicará en la próxima conexión.
-log.updateRestartFailed = winws2 no se inició tras la actualización: {0}
 log.cancelled = Operación cancelada.
 log.error = Error: {0}
-log.noWarpCli = No se encontró warp-cli.exe. Instala Cloudflare WARP: https://one.one.one.one/
-log.otherDpi = Atención: hay otra herramienta anti-DPI en ejecución que puede interferir: {0}
 log.otherVpn = Atención: hay otra VPN activa y el tráfico de WARP pasa por ella: {0}
 log.vpnAdvice = Desactiva la otra VPN; si no, WARP puede no conectarse y la estrategia se elegirá mal.
-log.downloadFailed = No se pudo descargar zapret2: {0}
-log.manualInstall = Puedes extraerlo a mano: copia {0} en {1}
 log.searchQuick = Búsqueda rápida: {0} estrategias, parar tras {1} válidas
 log.searchFull = Búsqueda completa: {0} estrategias
 log.searchSelected = Probando las seleccionadas: {0}
@@ -167,18 +122,9 @@ log.tryNext = «{0}» no conectó, probando la siguiente.
 log.connectingWith = Conectando con la estrategia: {0}
 log.warpNotConnected = WARP no se conectó.
 log.warpConnectedIn = WARP conectado en {0} ms.
-log.releasesFallback = releases/latest no está disponible, probando la API de GitHub: {0}
-log.extracted = zapret2 {0} extraído del programa.
-log.updateApplyFailed = No se pudo aplicar la actualización de zapret2: {0}
-log.updated = zapret2 actualizado a {0}.
-log.rolledBack = La nueva versión de zapret2 no se inició; se restauró {0}.
-log.rollbackFailed = No se pudo restaurar la versión anterior de zapret2: {0}
-log.defenderAdded = Carpeta añadida a las exclusiones de Defender: {0}
-log.defenderFailed = No se pudo añadir la exclusión: {0}
 log.warpRegistering = WARP no está registrado, registrando...
 log.warpRegistered = WARP registrado.
 log.warpRegisterFailed = Error al registrar WARP: {0}
-log.customReadFailed = No se pudo leer {0}: {1}
 log.customSkipped = {0}: línea omitida (formato: Nombre | h3/h2/wg | argumentos): {1}
 log.autostartOn = Inicio automático activado.
 log.autostartOff = Inicio automático desactivado.
@@ -186,3 +132,62 @@ log.autostartFailed = No se pudo cambiar el inicio automático: {0}
 log.licenseFailed = No se pudo escribir la licencia {0}: {1}
 log.configBroken = Los ajustes están dañados, se usan los valores predeterminados: {0}
 log.configSaveFailed = No se pudieron guardar los ajustes: {0}
+
+# ---- Estrategias no disponibles
+strategy.directH2 = Directa por HTTP/2 (sin desync)
+strategy.badSyntax = {0}
+strategy.unknownFeature = requiere algo más que un paquete falso o una división TCP simple ({0}) — aún no disponible en macOS
+strategy.badsum = requiere alterar sumas de comprobación con sockets raw — aún no disponible en macOS
+
+# ---- Servicio zarpd
+daemon.title = Servicio zarpd
+daemon.notInstalled = No instalado
+daemon.requiresApproval = Instalado — requiere aprobación en Ajustes del Sistema
+daemon.enabled = Instalado
+daemon.notFound = No encontrado — prueba a reinstalar Zarp
+daemon.unknown = Estado desconocido ({0})
+daemon.respondingYes = Responde (versión {0}, pid {1})
+daemon.respondingNo = No responde: {0}
+daemon.respondingUnknown = Comprobando...
+daemon.badLocation = Zarp se está ejecutando desde una imagen de disco o desde una carpeta de descargas temporal, y el servicio en segundo plano dejaría de funcionar en cuanto desaparezca. Arrastra Zarp a la carpeta Aplicaciones, expulsa la imagen de disco, abre Zarp desde Aplicaciones y pulsa «Instalar» de nuevo.
+daemon.install = Instalar
+daemon.restart = Reiniciar
+daemon.uninstall = Desinstalar
+daemon.openSettings = Abrir Ajustes del Sistema…
+daemon.refresh = Actualizar
+daemon.badLocationApplications = Zarp solo puede instalar su servicio en segundo plano si está en la carpeta Aplicaciones: el servicio se ejecuta con permisos de administrador y no debe estar en un lugar que los programas normales puedan modificar. Arrastra Zarp a la carpeta Aplicaciones, ábrelo desde allí y pulsa «Instalar» de nuevo.
+daemon.stale = El servicio en ejecución es la versión {0}, pero esta app es la {1}. Pulsa «Reiniciar» para actualizarlo.
+daemon.restartingStale = El servicio zarpd es la versión {0} pero la app es la {1}: se reinicia el servicio para actualizarlo.
+
+# ---- Pérdida de conexión, cuenta WARP
+detail.connectionLost = Conexión perdida
+detail.termsDeclined = No se aceptaron las condiciones de Cloudflare
+detail.unsupported = Esta estrategia no está disponible en macOS
+detail.strategyTestRoute = Estrategia: {0} (solo ruta de prueba: el resto del tráfico no usa WARP)
+log.connectionLost = Se perdió la conexión con WARP: {0}
+log.reconnecting = Reconectando ({0}/{1}) con «{2}»...
+log.reconnectGiveUp = No se pudo reconectar automáticamente. Pulsa el botón para conectar de nuevo.
+log.unsupportedStrategy = «{0}» no está disponible en macOS: {1}
+log.customSaveFailed = No se pudo guardar {0}: {1}
+err.daemonGone = el servicio zarpd dejó de responder
+err.unknownLoss = el túnel desapareció (no se indicó el motivo)
+err.foreignVpn = Otra VPN o proxy controla la ruta predeterminada. Desactívala y vuelve a conectar.
+err.noAccount = Todavía no hay ninguna cuenta WARP registrada.
+strategy.wgUnsupported = WireGuard aún no es compatible con macOS
+result.unavailable = no disponible en macOS
+
+# ---- Diálogos
+dlg.vpnContinue = Continuar de todos modos
+dlg.termsTitle = Cuenta de Cloudflare WARP
+dlg.terms = Zarp necesita una cuenta de Cloudflare WARP para conectarse.\n\nCreará una cuenta anónima para este Mac y aceptará en tu nombre las Condiciones del servicio de WARP de Cloudflare (cloudflare.com/application/terms). No se envía ningún dato personal.\n\n¿Continuar?
+dlg.termsAccept = Aceptar y continuar
+
+# ---- Barra de menús, opciones, editor
+tray.quit = Salir de Zarp
+opt.routeAll = Enviar todo el tráfico por WARP
+opt.routeAllTip = Desactivado: solo una ruta de prueba pasa por el túnel (modo de diagnóstico); el resto del tráfico evita WARP
+opt.overrideDNS = Usar el DNS de Cloudflare mientras haya conexión
+opt.reconnect = Reconectar automáticamente si se corta la conexión
+btn.save = Guardar
+custom.skipped = Guardado. {0} línea(s) no se entendieron y se omitieron (formato: Nombre | h3/h2/wg | argumentos):
+custom.saveFailed = No se pudo guardar {0}: {1}

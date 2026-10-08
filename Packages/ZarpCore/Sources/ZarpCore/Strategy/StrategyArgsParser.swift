@@ -51,6 +51,11 @@ public enum StrategyArgsParser {
                     let pos = params["pos"] ?? "2" // winws2 default
                     guard let positions = parsePositions(pos) else { return syntaxIssue("bad split positions '\(pos)'") }
                     tcpDesync = TCPDesyncStep(mode: fn == "multisplit" ? .split : .disorder, positions: positions)
+                case (.masqueH2, "fake"):
+                    // A decoy segment on a TCP stream only works with a raw-socket trick (tcp_md5,
+                    // tcp_seq, ...). Name the trick: it is what the user sees in the tooltip.
+                    let tricks = Set(params.keys).subtracting(["blob", "repeats"])
+                    return rawIssue("fake" + tricks.sorted().map { ":" + $0 }.joined())
                 default:
                     return rawIssue("\(fn) (\(transport.title))")
                 }

@@ -4,7 +4,7 @@ package warp
 // a DPI middlebox inspecting only the first segment (or reassembling naively) doesn't recognize
 // it, matching zapret's multisplit/multidisorder and Zarp-Android's desync.go — whose algorithm
 // has no Android-specific concept in it either (plain net.Conn + syscall), reimplemented directly
-// rather than adapted from it (docs/ARCHITECTURE.md §8 on why: keeps this module's dependency
+// rather than adapted from it (docs/ARCHITECTURE.md §11 on why: keeps this module's dependency
 // graph MIT-clean, not GPL-3.0, and there's barely a second way to write this short an algorithm).
 //
 //   split    - the ClientHello leaves as several TCP segments, in order

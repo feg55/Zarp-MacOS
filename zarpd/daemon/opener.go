@@ -23,7 +23,7 @@ import (
 
 // blobFiles mirrors ZarpCore's Blob.fileName (Blob.swift) exactly — kept as data here rather than
 // shared code because zarpd (Go) and ZarpCore (Swift) are separate modules/languages; the IPC
-// layer is the seam, not a shared struct (docs/ARCHITECTURE.md §9.4). The names a client may use
+// layer is the seam, not a shared struct (docs/ARCHITECTURE.md §5). The names a client may use
 // are validated against ipc.BlobNames before they ever reach this map.
 var blobFiles = map[string]string{
 	"quic_google": "quic_initial_www_google_com.bin",
