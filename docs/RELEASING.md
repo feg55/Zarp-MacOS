@@ -70,7 +70,10 @@ certificate, which stays on the maintainer's Mac.
      --title "Zarp for macOS 0.2.0" --notes-file release-notes.md --prerelease
    ```
 
-   or use the *Draft a new release* page and upload the two files.
+   `gh` is not installed by default: `brew install gh`, then `gh auth login` once. Without it, use the
+   *Draft a new release* page instead (`https://github.com/feg55/Zarp-MacOS/releases/new?tag=v0.2.0`,
+   which also accepts `title`, `body` and `prerelease=1` query parameters), choose the existing tag, paste the
+   notes and drag the two files in.
 
 ## Release notes template
 
