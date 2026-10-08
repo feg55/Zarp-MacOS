@@ -15,7 +15,9 @@ One-click Cloudflare WARP for networks that block it. Zarp finds a [zapret2](htt
 
 | Platform | Download | Requirements |
 |---|---|---|
-| **macOS** | [**Zarp-&lt;version&gt;-arm64.dmg**](https://github.com/feg55/Zarp-MacOS/releases/latest) · [all releases](https://github.com/feg55/Zarp-MacOS/releases) | Apple Silicon Mac (M1 or newer), macOS 14 or later (developed and tested on 15), an administrator password once. No other software: Zarp is its own WARP client |
+| **macOS** | [**DMG**](https://github.com/feg55/Zarp-MacOS/releases/latest) · [all releases](https://github.com/feg55/Zarp-MacOS/releases) | Apple Silicon Mac (M1 or newer), macOS 14 or later (tested on 15), an administrator password once. No WARP app needed: Zarp is its own WARP client |
+| **Windows** | [**Zarp.exe**](https://github.com/feg55/Zarp/releases/latest/download/Zarp.exe) · [all releases](https://github.com/feg55/Zarp/releases) | Windows 10/11 x64, administrator rights. [Cloudflare WARP](https://one.one.one.one/) is installed by Zarp if it is missing |
+| **Android** | [**APK**](https://github.com/feg55/Zarp-Android/releases/latest) · [source](https://github.com/feg55/Zarp-Android) | Android 8.0+, no root, no WARP app needed |
 
 ## Features
 
@@ -77,7 +79,7 @@ Every new download (an update, for instance) is checked again, so you repeat thi
 The release notes list the SHA-256 of the disk image:
 
 ```sh
-shasum -a 256 ~/Downloads/Zarp-0.1.0-arm64.dmg      # compare with the release notes
+shasum -a 256 ~/Downloads/Zarp-*.dmg      # compare with the release notes
 ```
 
 ### What Zarp changes on your system

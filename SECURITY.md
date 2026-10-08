@@ -63,7 +63,7 @@ Releases are built by the maintainer on their own Mac and are signed with a free
 certificate. The release notes list the SHA-256 of the disk image; compare it before you open it:
 
 ```sh
-shasum -a 256 ~/Downloads/Zarp-<version>-arm64.dmg
+shasum -a 256 ~/Downloads/Zarp-*.dmg
 ```
 
 Building from source is the strongest check: see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
