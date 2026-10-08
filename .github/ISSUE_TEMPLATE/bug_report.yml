@@ -21,7 +21,7 @@ body:
     attributes:
       label: Zarp version
       description: "Shown under *Zarp > About Zarp*, or run `defaults read /Applications/Zarp.app/Contents/Info CFBundleShortVersionString`."
-      placeholder: "0.1.0"
+      placeholder: "0.2.0"
     validations:
       required: true
   - type: input
