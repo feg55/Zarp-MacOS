@@ -102,8 +102,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.zarp.mac
         PRODUCT_NAME: Zarp
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "2"
         SWIFT_VERSION: "5.9"
         # Apple Silicon only (docs/ARCHITECTURE.md §1): the embedded zarpd
         # Go binary is arm64-only, so a universal app would ship an x86_64 slice with nothing to

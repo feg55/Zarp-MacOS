@@ -15,9 +15,9 @@ certificate, which stays on the maintainer's Mac.
 
 - **Unnotarized.** There is no paid Apple Developer Program membership behind the project, so the disk image
   is signed with a free *Apple Development* certificate and is not notarized. Users get Gatekeeper's "was
-  blocked" prompt on first launch; the steps are in the disk image's `READ ME FIRST.txt`
-  ([`scripts/dmg-readme.txt`](../scripts/dmg-readme.txt)), the README and
-  [TROUBLESHOOTING.md](TROUBLESHOOTING.md). This is a deliberate trade-off, not an oversight.
+  blocked" prompt on first launch; the steps are in the README, in
+  [TROUBLESHOOTING.md](TROUBLESHOOTING.md) and, in short, on the window of the disk image itself
+  (`scripts/dmg/`). This is a deliberate trade-off, not an oversight.
 - **A free certificate lasts one year.** An app signed with an expired certificate keeps running, but a new
   build needs a fresh one (Xcode creates it).
 - **The signature carries a name.** A development certificate's subject is `Apple Development: <the Apple ID's
@@ -50,30 +50,38 @@ certificate, which stays on the maintainer's Mac.
    daemon, the icon, the languages, the blobs and the licences, both binaries are arm64-only, the app and the
    daemon share a Team ID, and the daemon reports the app's version. It then verifies the image and that the
    signature survives inside it, and writes `build/Zarp-<version>-arm64.dmg` and its `.sha256`.
-5. **Smoke-test the artifact** as a user would: mount the image, drag the app to `/Applications` (replacing a
-   development copy), pass Gatekeeper, install the daemon from Settings, connect, browse, disconnect, and
+
+   The image opens as a drag-to-Applications window (background, icon positions, volume icon). That layout
+   is written by [dmgbuild](https://github.com/dmgbuild/dmgbuild), which `package.sh` installs into
+   `build/.dmgbuild-venv` the first time (it needs `python3` and a network once; `pip3 install dmgbuild`
+   works too). The artwork is `scripts/dmg/background*.png`, redrawn with `make dmg-art`; the icon positions
+   are in `scripts/dmg/settings.py` and must agree with it.
+5. **Smoke-test the artifact** as a user would: open the image (it should show the install window: Zarp, an
+   arrow and Applications), drag the app to `/Applications` (replacing a development copy), pass Gatekeeper, install the daemon from Settings, connect, browse, disconnect, and
    check that the network is back to normal. This is the step that catches packaging problems the script
    cannot.
 6. **Commit and tag.**
 
    ```sh
-   git commit -am "Release 0.2.0"
-   git tag -a v0.2.0 -m "Zarp for macOS 0.2.0"
-   git push && git push origin v0.2.0
+   VERSION=0.3.0                      # the version you are releasing
+   git add -A && git commit -m "Release $VERSION"
+   git tag -a "v$VERSION" -m "Zarp for macOS $VERSION"
+   git push && git push origin "v$VERSION"
    ```
 
-7. **Publish the release** on GitHub with the image and its checksum attached (mark 0.x releases as
-   pre-releases if you want the badge to say so):
+7. **Publish the release** on GitHub with the image and its checksum attached. Publish a normal release, not
+   a pre-release: the README's download button points to `releases/latest`, and GitHub resolves that to the
+   newest release that is *not* marked as a pre-release.
 
    ```sh
-   gh release create v0.2.0 build/Zarp-0.2.0-arm64.dmg build/Zarp-0.2.0-arm64.dmg.sha256 \
-     --title "Zarp for macOS 0.2.0" --notes-file release-notes.md --prerelease
+   gh release create "v$VERSION" "build/Zarp-$VERSION-arm64.dmg" "build/Zarp-$VERSION-arm64.dmg.sha256" \
+     --title "Zarp for macOS $VERSION" --notes-file release-notes.md
    ```
 
    `gh` is not installed by default: `brew install gh`, then `gh auth login` once. Without it, use the
-   *Draft a new release* page instead (`https://github.com/feg55/Zarp-MacOS/releases/new?tag=v0.2.0`,
-   which also accepts `title`, `body` and `prerelease=1` query parameters), choose the existing tag, paste the
-   notes and drag the two files in.
+   *Draft a new release* page instead (`https://github.com/feg55/Zarp-MacOS/releases/new?tag=v0.3.0`, which
+   also accepts `title` and `body` query parameters), choose the existing tag, paste the notes and drag the
+   two files in.
 
 ## Release notes template
 

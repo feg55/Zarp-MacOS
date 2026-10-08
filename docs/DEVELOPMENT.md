@@ -161,6 +161,7 @@ step with each other and with the code (no missing keys, no leftover keys, same 
 |---|---|
 | `make notices` | `Resources/Licenses/THIRD_PARTY_NOTICES.md` (from the Go modules actually linked into `zarpd`) and the bundled copy of `LICENSE`. CI fails when they are stale |
 | `make icon` | the app icon set, `docs/images/icon.png` and `docs/images/social-preview.png`, drawn by `scripts/make-icon.swift` |
+| `make dmg-art` | the disk image's window background, `scripts/dmg/background.png` and `background@2x.png` (also drawn by `scripts/make-icon.swift`); the icon positions on it are in `scripts/dmg/settings.py` |
 | `make dmg` | `build/Zarp-<version>-arm64.dmg` and its `.sha256`; see [RELEASING.md](RELEASING.md) |
 
 ## Continuous integration

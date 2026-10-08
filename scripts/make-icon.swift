@@ -5,6 +5,11 @@
 //   swift scripts/make-icon.swift appiconset App/Sources/Zarp/Assets.xcassets/AppIcon.appiconset
 //   swift scripts/make-icon.swift png docs/images/icon.png 512
 //   swift scripts/make-icon.swift social docs/images/social-preview.png
+//   swift scripts/make-icon.swift dmg-background scripts/dmg
+//
+// `dmg-background` draws the window shown when the disk image is opened (background.png at 1x and
+// background@2x.png at 2x; scripts/dmg/settings.py positions the icons on it, so the numbers below and
+// there must agree).
 //
 // The lightning bolt is the outline of the Windows/Android Zarp icon (same author, MIT), set on the
 // macOS icon grid: an 824 pt squircle centred in a 1024 pt canvas, which leaves the margin macOS
@@ -159,9 +164,88 @@ func socialPreview() -> NSBitmapImageRep {
     }
 }
 
+// MARK: - Disk image window
+
+/// The content area of the window that opens when the disk image is mounted, in points: the 660 x 400
+/// window of scripts/dmg/settings.py minus its 28 pt title bar. A person who has Finder's status bar or
+/// path bar switched on (a global setting since macOS 13, which a disk image cannot override) sees about
+/// 47 pt less at the bottom, so everything that matters sits in the upper part.
+let dmgWindow = CGSize(width: 660, height: 372)
+/// Where Finder centres the two icons, measured from the content area's top-left (scripts/dmg/settings.py).
+let dmgZarpCenter = CGPoint(x: 170, y: 196)
+let dmgApplicationsCenter = CGPoint(x: 490, y: 196)
+
+/// Dark backdrop, a light tile behind each icon, an arrow centred between the tiles, and one line of text.
+/// (Less is better here: the README explains the first launch, the window only has to say what to drag.)
+///
+/// The tiles are light grey on purpose: Finder draws the icon labels itself, in black, whatever the
+/// system appearance, so the labels need a light surface to sit on.
+func dmgBackground(scale: Int) -> NSBitmapImageRep {
+    let w = Int(dmgWindow.width), h = Int(dmgWindow.height)
+    let space = CGColorSpace(name: CGColorSpace.sRGB)!
+    let ctx = CGContext(data: nil, width: w * scale, height: h * scale, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    ctx.scaleBy(x: CGFloat(scale), y: CGFloat(scale)) // from here on: points, origin bottom-left
+    func cgY(_ top: CGFloat) -> CGFloat { CGFloat(h) - top }
+    func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> CGColor { CGColor(srgbRed: r / 255, green: g / 255, blue: b / 255, alpha: a) }
+
+    let bg = CGGradient(colorsSpace: space, colors: [rgb(31, 33, 42), rgb(14, 15, 19)] as CFArray, locations: [0, 1])!
+    ctx.drawLinearGradient(bg, start: CGPoint(x: 0, y: CGFloat(h)), end: CGPoint(x: CGFloat(w), y: 0), options: [])
+    let glow = CGGradient(colorsSpace: space, colors: [rgb(244, 129, 32, 0.16), rgb(244, 129, 32, 0)] as CFArray, locations: [0, 1])!
+    ctx.drawRadialGradient(glow, startCenter: CGPoint(x: CGFloat(w) / 2, y: cgY(200)), startRadius: 0,
+                           endCenter: CGPoint(x: CGFloat(w) / 2, y: cgY(200)), endRadius: 330, options: [])
+
+    // Tiles behind the icons, centred on them (the label then sits in the lower padding), so the arrow can
+    // be level with both the icons and the tiles.
+    for c in [dmgZarpCenter, dmgApplicationsCenter] {
+        let tile = CGRect(x: c.x - 100, y: cgY(c.y + 107), width: 200, height: 214)
+        let path = CGPath(roundedRect: tile, cornerWidth: 28, cornerHeight: 28, transform: nil)
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: -8), blur: 22, color: rgb(0, 0, 0, 0.55))
+        ctx.addPath(path); ctx.setFillColor(rgb(190, 194, 201)); ctx.fillPath()
+        ctx.restoreGState()
+        ctx.saveGState()
+        ctx.addPath(path); ctx.clip()
+        let fill = CGGradient(colorsSpace: space, colors: [rgb(222, 225, 231), rgb(180, 184, 192)] as CFArray, locations: [0, 1])!
+        ctx.drawLinearGradient(fill, start: CGPoint(x: tile.midX, y: tile.maxY), end: CGPoint(x: tile.midX, y: tile.minY), options: [])
+        ctx.restoreGState()
+        ctx.addPath(path); ctx.setStrokeColor(rgb(255, 255, 255, 0.22)); ctx.setLineWidth(1); ctx.strokePath()
+    }
+
+    // The arrow, orange like the rest of the brand: 80 pt long, centred in the 120 pt gap between the tiles
+    // (x 270 to 390) and level with the icon centres, so it touches neither tile.
+    let ay = cgY(dmgZarpCenter.y)
+    let gapMid = (dmgZarpCenter.x + dmgApplicationsCenter.x) / 2
+    let tail = gapMid - 40, tip = gapMid + 40, headBase = tip - 32
+    ctx.saveGState()
+    ctx.setShadow(offset: .zero, blur: 14, color: rgb(244, 129, 32, 0.55))
+    ctx.setStrokeColor(rgb(244, 129, 32)); ctx.setFillColor(rgb(244, 129, 32))
+    ctx.setLineWidth(10); ctx.setLineCap(.round)
+    ctx.move(to: CGPoint(x: tail, y: ay)); ctx.addLine(to: CGPoint(x: headBase + 2, y: ay)); ctx.strokePath()
+    ctx.setLineJoin(.round); ctx.setLineWidth(4)
+    ctx.move(to: CGPoint(x: headBase, y: ay + 22)); ctx.addLine(to: CGPoint(x: tip - 2, y: ay)); ctx.addLine(to: CGPoint(x: headBase, y: ay - 22)); ctx.closePath()
+    ctx.drawPath(using: .fillStroke)
+    ctx.restoreGState()
+
+    // Text.
+    let gctx = NSGraphicsContext(cgContext: ctx, flipped: false)
+    NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = gctx
+    func line(_ s: String, top: CGFloat, size: CGFloat, weight: NSFont.Weight, color: NSColor) {
+        let a = NSAttributedString(string: s, attributes: [.font: NSFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color])
+        let sz = a.size()
+        a.draw(at: CGPoint(x: (CGFloat(w) - sz.width) / 2, y: cgY(top) - sz.height))
+    }
+    line("Drag Zarp to Applications", top: 30, size: 26, weight: .semibold, color: .white)
+    NSGraphicsContext.restoreGraphicsState()
+
+    let rep = NSBitmapImageRep(cgImage: ctx.makeImage()!)
+    rep.size = NSSize(width: dmgWindow.width, height: dmgWindow.height) // 72 dpi at 1x, 144 dpi at 2x
+    return rep
+}
+
 let args = CommandLine.arguments
 guard args.count >= 3 else {
-    FileHandle.standardError.write(Data("usage: make-icon.swift appiconset <dir> | png <file> <size> | social <file>\n".utf8))
+    FileHandle.standardError.write(Data("usage: make-icon.swift appiconset <dir> | png <file> <size> | social <file> | dmg-background <dir>\n".utf8))
     exit(2)
 }
 switch args[1] {
@@ -183,6 +267,9 @@ case "png":
     writePNG(iconPNG(size: size), to: args[2])
 case "social":
     writePNG(socialPreview(), to: args[2])
+case "dmg-background":
+    writePNG(dmgBackground(scale: 1), to: args[2] + "/background.png")
+    writePNG(dmgBackground(scale: 2), to: args[2] + "/background@2x.png")
 default:
     exit(2)
 }

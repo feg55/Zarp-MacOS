@@ -6,7 +6,7 @@ SHELL := /bin/bash
 # Xcode runs with a minimal PATH; add the usual Homebrew and Go locations.
 export PATH := /opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin:$(PATH)
 
-.PHONY: help test test-go test-swift check-docs fmt project build dmg integration notices icon clean
+.PHONY: help test test-go test-swift check-docs fmt project build dmg dmg-art integration notices icon clean
 
 help: ## List the targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-13s %s\n", $$1, $$2}'
@@ -36,6 +36,9 @@ build: project ## Unsigned Release build of the app (what CI checks)
 
 dmg: ## Signed, packaged disk image in build/ (needs your signing team; docs/RELEASING.md)
 	scripts/package.sh
+
+dmg-art: ## Redraw the disk image's window background (scripts/dmg/)
+	swift scripts/make-icon.swift dmg-background scripts/dmg
 
 integration: ## Real-network test of the daemon. Turn other VPNs OFF first; asks for sudo
 	scripts/test-integration.sh

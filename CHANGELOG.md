@@ -6,6 +6,20 @@ All notable changes to Zarp for macOS are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-08
+
+### Changed
+
+- The disk image now opens as a drag-to-Applications window (Zarp, an arrow and the Applications folder, with
+  Zarp's icon on the volume) instead of a plain folder. The old `READ ME FIRST.txt` is gone: the README
+  explains the first launch.
+- The app and the background service are otherwise the same as in 0.1.0.
+
+### Documentation
+
+- The README is shorter and follows the style of the Windows and Android READMEs, with download links for all
+  three platforms and a step-by-step "Why won't Zarp open?" guide with screenshots.
+
 ## [0.1.0] - 2026-10-08
 
 The first public release.
@@ -44,5 +58,6 @@ The first public release.
   re-established. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#13-known-limitations) for the full list.
 - Translations other than English and Russian have not been reviewed by native speakers.
 
-[Unreleased]: https://github.com/feg55/Zarp-MacOS/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/feg55/Zarp-MacOS/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/feg55/Zarp-MacOS/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/feg55/Zarp-MacOS/releases/tag/v0.1.0
