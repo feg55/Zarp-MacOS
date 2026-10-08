@@ -16,7 +16,8 @@ include the log (see [Where the logs are](#where-the-logs-are)).
 
 The release is not notarized by Apple (there is no paid Apple Developer membership behind the project), so
 Gatekeeper blocks the first launch with "Zarp was blocked to protect your Mac" or "cannot be opened because
-the developer cannot be verified". That is expected.
+the developer cannot be verified". That is expected. **With screenshots:**
+[Why won't Zarp open?](../README.md#why-wont-zarp-open) in the README.
 
 1. Make sure Zarp is in **/Applications** (drag it there from the disk image, then eject the image).
 2. Open Zarp once; it is refused.
@@ -66,7 +67,7 @@ default route.
 - Try a different network (a phone hotspot is the quickest check): if WARP works there, your network's DPI is
   the cause, and an issue with your provider and country and the **Strategy report** form helps everyone.
 - Add your own strategies (*Custom strategies...*): the syntax is in the
-  [README](../README.md#using-zarp). Strategies marked "not available on macOS" need raw sockets or WireGuard
+  [README](../README.md#how-it-works). Strategies marked "not available on macOS" need raw sockets or WireGuard
   and cannot work here.
 - Some networks block Cloudflare's WARP addresses outright, regardless of the handshake; no desync strategy
   can help with that.
